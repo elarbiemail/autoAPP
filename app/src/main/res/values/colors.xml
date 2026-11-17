@@ -1,0 +1,7 @@
+<resources>
+    <color name="brand">#123A5A</color>
+    <color name="accent">#FF9F1C</color>
+    <color name="bg">#0B1320</color>
+    <color name="panel">#CC0B1320</color>
+    <color name="hint">#99FFFFFF</color>
+</resources>

@@ -1,0 +1,40 @@
+{
+  "name": "Mon dépôt",
+  "description": "Exemple de dépôt Omni IPTV à héberger sur GitHub (raw) ou GitHub Pages.",
+  "author": "Elarbi",
+  "version": 1,
+  "items": [
+    {
+      "type": "m3u",
+      "name": "Chaînes du Maroc",
+      "url": "https://iptv-org.github.io/iptv/countries/ma.m3u",
+      "epg": "",
+      "group": "Maroc",
+      "description": "Liste M3U publique"
+    },
+    {
+      "type": "youtube",
+      "name": "France 24",
+      "url": "https://www.youtube.com/@FRANCE24/live",
+      "group": "Info"
+    },
+    {
+      "type": "xtream",
+      "name": "Mon abonnement",
+      "url": "http://serveur:8080",
+      "username": "identifiant",
+      "password": "motdepasse"
+    },
+    {
+      "type": "stalker",
+      "name": "Mon portail MAC",
+      "url": "http://portail:8080/c/",
+      "mac": ""
+    },
+    {
+      "type": "repo",
+      "name": "Autre dépôt",
+      "url": "https://exemple.github.io/autre-depot.json"
+    }
+  ]
+}

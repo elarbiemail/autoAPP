@@ -1,0 +1,225 @@
+{
+ "name": "Dépôt intégré Omni IPTV",
+ "description": "Chaînes gratuites et légales : catalogues iptv-org, Free-TV et directs YouTube officiels.",
+ "author": "Omni IPTV",
+ "version": 1,
+ "items": [
+  {
+   "type": "m3u",
+   "name": "Maroc",
+   "url": "https://iptv-org.github.io/iptv/countries/ma.m3u",
+   "group": "Chaînes gratuites (iptv-org / Free-TV)",
+   "description": "Catalogue public de chaînes en libre accès"
+  },
+  {
+   "type": "m3u",
+   "name": "France",
+   "url": "https://iptv-org.github.io/iptv/countries/fr.m3u",
+   "group": "Chaînes gratuites (iptv-org / Free-TV)",
+   "description": "Catalogue public de chaînes en libre accès"
+  },
+  {
+   "type": "m3u",
+   "name": "Algérie",
+   "url": "https://iptv-org.github.io/iptv/countries/dz.m3u",
+   "group": "Chaînes gratuites (iptv-org / Free-TV)",
+   "description": "Catalogue public de chaînes en libre accès"
+  },
+  {
+   "type": "m3u",
+   "name": "Tunisie",
+   "url": "https://iptv-org.github.io/iptv/countries/tn.m3u",
+   "group": "Chaînes gratuites (iptv-org / Free-TV)",
+   "description": "Catalogue public de chaînes en libre accès"
+  },
+  {
+   "type": "m3u",
+   "name": "Égypte",
+   "url": "https://iptv-org.github.io/iptv/countries/eg.m3u",
+   "group": "Chaînes gratuites (iptv-org / Free-TV)",
+   "description": "Catalogue public de chaînes en libre accès"
+  },
+  {
+   "type": "m3u",
+   "name": "Arabie saoudite",
+   "url": "https://iptv-org.github.io/iptv/countries/sa.m3u",
+   "group": "Chaînes gratuites (iptv-org / Free-TV)",
+   "description": "Catalogue public de chaînes en libre accès"
+  },
+  {
+   "type": "m3u",
+   "name": "Qatar",
+   "url": "https://iptv-org.github.io/iptv/countries/qa.m3u",
+   "group": "Chaînes gratuites (iptv-org / Free-TV)",
+   "description": "Catalogue public de chaînes en libre accès"
+  },
+  {
+   "type": "m3u",
+   "name": "Émirats",
+   "url": "https://iptv-org.github.io/iptv/countries/ae.m3u",
+   "group": "Chaînes gratuites (iptv-org / Free-TV)",
+   "description": "Catalogue public de chaînes en libre accès"
+  },
+  {
+   "type": "m3u",
+   "name": "Belgique",
+   "url": "https://iptv-org.github.io/iptv/countries/be.m3u",
+   "group": "Chaînes gratuites (iptv-org / Free-TV)",
+   "description": "Catalogue public de chaînes en libre accès"
+  },
+  {
+   "type": "m3u",
+   "name": "Canada",
+   "url": "https://iptv-org.github.io/iptv/countries/ca.m3u",
+   "group": "Chaînes gratuites (iptv-org / Free-TV)",
+   "description": "Catalogue public de chaînes en libre accès"
+  },
+  {
+   "type": "m3u",
+   "name": "Langue arabe",
+   "url": "https://iptv-org.github.io/iptv/languages/ara.m3u",
+   "group": "Chaînes gratuites (iptv-org / Free-TV)",
+   "description": "Catalogue public de chaînes en libre accès"
+  },
+  {
+   "type": "m3u",
+   "name": "Langue française",
+   "url": "https://iptv-org.github.io/iptv/languages/fra.m3u",
+   "group": "Chaînes gratuites (iptv-org / Free-TV)",
+   "description": "Catalogue public de chaînes en libre accès"
+  },
+  {
+   "type": "m3u",
+   "name": "Langue anglaise",
+   "url": "https://iptv-org.github.io/iptv/languages/eng.m3u",
+   "group": "Chaînes gratuites (iptv-org / Free-TV)",
+   "description": "Catalogue public de chaînes en libre accès"
+  },
+  {
+   "type": "m3u",
+   "name": "Information",
+   "url": "https://iptv-org.github.io/iptv/categories/news.m3u",
+   "group": "Chaînes gratuites (iptv-org / Free-TV)",
+   "description": "Catalogue public de chaînes en libre accès"
+  },
+  {
+   "type": "m3u",
+   "name": "Éducation",
+   "url": "https://iptv-org.github.io/iptv/categories/education.m3u",
+   "group": "Chaînes gratuites (iptv-org / Free-TV)",
+   "description": "Catalogue public de chaînes en libre accès"
+  },
+  {
+   "type": "m3u",
+   "name": "Documentaires",
+   "url": "https://iptv-org.github.io/iptv/categories/documentary.m3u",
+   "group": "Chaînes gratuites (iptv-org / Free-TV)",
+   "description": "Catalogue public de chaînes en libre accès"
+  },
+  {
+   "type": "m3u",
+   "name": "Enfants",
+   "url": "https://iptv-org.github.io/iptv/categories/kids.m3u",
+   "group": "Chaînes gratuites (iptv-org / Free-TV)",
+   "description": "Catalogue public de chaînes en libre accès"
+  },
+  {
+   "type": "m3u",
+   "name": "Culture",
+   "url": "https://iptv-org.github.io/iptv/categories/culture.m3u",
+   "group": "Chaînes gratuites (iptv-org / Free-TV)",
+   "description": "Catalogue public de chaînes en libre accès"
+  },
+  {
+   "type": "m3u",
+   "name": "Science",
+   "url": "https://iptv-org.github.io/iptv/categories/science.m3u",
+   "group": "Chaînes gratuites (iptv-org / Free-TV)",
+   "description": "Catalogue public de chaînes en libre accès"
+  },
+  {
+   "type": "m3u",
+   "name": "Musique",
+   "url": "https://iptv-org.github.io/iptv/categories/music.m3u",
+   "group": "Chaînes gratuites (iptv-org / Free-TV)",
+   "description": "Catalogue public de chaînes en libre accès"
+  },
+  {
+   "type": "m3u",
+   "name": "Religion",
+   "url": "https://iptv-org.github.io/iptv/categories/religious.m3u",
+   "group": "Chaînes gratuites (iptv-org / Free-TV)",
+   "description": "Catalogue public de chaînes en libre accès"
+  },
+  {
+   "type": "m3u",
+   "name": "Sport",
+   "url": "https://iptv-org.github.io/iptv/categories/sports.m3u",
+   "group": "Chaînes gratuites (iptv-org / Free-TV)",
+   "description": "Catalogue public de chaînes en libre accès"
+  },
+  {
+   "type": "m3u",
+   "name": "Films",
+   "url": "https://iptv-org.github.io/iptv/categories/movies.m3u",
+   "group": "Chaînes gratuites (iptv-org / Free-TV)",
+   "description": "Catalogue public de chaînes en libre accès"
+  },
+  {
+   "type": "m3u",
+   "name": "Free-TV (sélection mondiale)",
+   "url": "https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8",
+   "group": "Chaînes gratuites (iptv-org / Free-TV)",
+   "description": "Catalogue public de chaînes en libre accès"
+  },
+  {
+   "type": "youtube",
+   "name": "France 24 (français)",
+   "url": "https://www.youtube.com/@FRANCE24/live",
+   "group": "Info",
+   "description": "Direct officiel YouTube"
+  },
+  {
+   "type": "youtube",
+   "name": "France 24 (arabe)",
+   "url": "https://www.youtube.com/@France24_ar/live",
+   "group": "Info",
+   "description": "Direct officiel YouTube"
+  },
+  {
+   "type": "youtube",
+   "name": "Al Jazeera (arabe)",
+   "url": "https://www.youtube.com/@aljazeera/live",
+   "group": "Info",
+   "description": "Direct officiel YouTube"
+  },
+  {
+   "type": "youtube",
+   "name": "Al Jazeera English",
+   "url": "https://www.youtube.com/@AlJazeeraEnglish/live",
+   "group": "Info",
+   "description": "Direct officiel YouTube"
+  },
+  {
+   "type": "youtube",
+   "name": "Sky News Arabia",
+   "url": "https://www.youtube.com/@skynewsarabia/live",
+   "group": "Info",
+   "description": "Direct officiel YouTube"
+  },
+  {
+   "type": "youtube",
+   "name": "Euronews (français)",
+   "url": "https://www.youtube.com/@euronewsfr/live",
+   "group": "Info",
+   "description": "Direct officiel YouTube"
+  },
+  {
+   "type": "youtube",
+   "name": "NASA",
+   "url": "https://www.youtube.com/@NASA/live",
+   "group": "Science",
+   "description": "Direct officiel YouTube"
+  }
+ ]
+}
