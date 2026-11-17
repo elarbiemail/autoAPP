@@ -27,6 +27,11 @@ object Prefs {
         get() = p.getString("buffer", "normal") ?: "normal"
         set(v) = p.edit().putString("buffer", v).apply()
 
+    /** Mode tunnel (lecture vidéo confiée au téléviseur). */
+    var tunneling: Boolean
+        get() = p.getBoolean("tunneling", false)
+        set(v) = p.edit().putBoolean("tunneling", v).apply()
+
     var autoReconnect: Boolean
         get() = p.getBoolean("autoReconnect", true)
         set(v) = p.edit().putBoolean("autoReconnect", v).apply()

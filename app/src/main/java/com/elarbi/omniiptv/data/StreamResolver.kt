@@ -28,6 +28,22 @@ object StreamResolver {
         return mapOf("Cookie" to "mac=$mac; stb_lang=fr; timezone=$tz", "X-User-Agent" to x)
     }
 
+    /**
+     * Le lien désigne-t-il un flux HLS ? Reconnaît « .m3u8 » mais aussi les formes des portails
+     * Xtream / MAG : « extension=m3u8 », « output=m3u8 », « type=m3u8 », « /hls/ »…
+     */
+    fun looksHls(url: String): Boolean {
+        val l = url.lowercase()
+        return l.contains(".m3u8") || l.contains("=m3u8") || l.contains("=hls") || l.contains("/hls/") ||
+            l.contains("m3u8?") || l.endsWith("/m3u8") || l.contains("format=m3u")
+    }
+
+    /** Le lien désigne-t-il explicitement un flux MPEG-TS ? */
+    fun looksTs(url: String): Boolean {
+        val l = url.lowercase()
+        return l.contains(".ts?") || l.endsWith(".ts") || l.contains("extension=ts") || l.contains("output=ts") || l.contains("output=mpegts")
+    }
+
     /** Les liens des portails MAC sont à usage unique : il faut en redemander un à chaque essai. */
     fun isStalker(ch: Channel) = ch.url.startsWith("stalker:") || ch.url.startsWith("stkvod:")
 

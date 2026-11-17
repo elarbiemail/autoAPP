@@ -25,11 +25,14 @@ object PlayerFactory {
             .setEnableDecoderFallback(true)
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
         val load = when (com.elarbi.omniiptv.data.Prefs.buffer) {
-            "low" -> DefaultLoadControl.Builder().setBufferDurationsMs(5_000, 20_000, 1_000, 2_000).build()
-            "high" -> DefaultLoadControl.Builder().setBufferDurationsMs(30_000, 120_000, 3_000, 6_000).build()
-            else -> DefaultLoadControl.Builder().setBufferDurationsMs(15_000, 50_000, 2_500, 5_000).build()
+            "low" -> DefaultLoadControl.Builder().setBufferDurationsMs(4_000, 20_000, 700, 1_500).build()
+            "high" -> DefaultLoadControl.Builder().setBufferDurationsMs(30_000, 120_000, 2_500, 6_000).build()
+            else -> DefaultLoadControl.Builder().setBufferDurationsMs(12_000, 50_000, 1_200, 3_000).build()
         }
-        return ExoPlayer.Builder(ctx, renderers).setLoadControl(load).build()
+        val selector = androidx.media3.exoplayer.trackselection.DefaultTrackSelector(ctx)
+        // Mode tunnel : décodage vidéo directement par le téléviseur (plus fluide sur certains modèles).
+        selector.setParameters(selector.buildUponParameters().setTunnelingEnabled(com.elarbi.omniiptv.data.Prefs.tunneling))
+        return ExoPlayer.Builder(ctx, renderers).setLoadControl(load).setTrackSelector(selector).build()
     }
 
     fun play(
@@ -50,7 +53,7 @@ object PlayerFactory {
         )
         val l = url.lowercase()
         val mime = when {
-            forceHls || l.contains(".m3u8") -> MimeTypes.APPLICATION_M3U8
+            forceHls || com.elarbi.omniiptv.data.StreamResolver.looksHls(url) -> MimeTypes.APPLICATION_M3U8
             l.contains(".mpd") -> MimeTypes.APPLICATION_MPD
             l.contains(".ism") -> MimeTypes.APPLICATION_SS
             else -> null

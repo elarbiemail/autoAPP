@@ -125,6 +125,7 @@ class SettingsActivity : FragmentActivity() {
             Prefs.buffer = when (Prefs.buffer) { "low" -> "normal"; "normal" -> "high"; else -> "low" }
         }
         item("Reconnexion automatique en cas de coupure : ${onOff(Prefs.autoReconnect)}") { Prefs.autoReconnect = !Prefs.autoReconnect }
+        item("Mode tunnel (lecture plus fluide sur certains téléviseurs) : ${onOff(Prefs.tunneling)}") { Prefs.tunneling = !Prefs.tunneling }
         val aspects = listOf("adapter", "zoom", "étirer")
         item("Format d'image par défaut : ${aspects[Prefs.aspect.coerceIn(0, 2)]}") { Prefs.aspect = (Prefs.aspect + 1) % 3 }
         item("Afficher l'heure dans le bandeau : ${onOff(Prefs.showClock)}") { Prefs.showClock = !Prefs.showClock }

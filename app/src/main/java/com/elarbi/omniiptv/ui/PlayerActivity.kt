@@ -249,6 +249,7 @@ class PlayerActivity : FragmentActivity() {
         }
         retried = false
         reconnects = 0
+        stalkerHls = false
         currentUrl = ""
         droppedFrames = 0
         speedBps = 0
@@ -312,9 +313,11 @@ class PlayerActivity : FragmentActivity() {
                 return
             }
             // Portail MAC : le lien est à usage unique → on en redemande un neuf (sans forcer le HLS).
-            if (StreamResolver.isStalker(ch) && reconnects < 3) {
+            if (StreamResolver.isStalker(ch) && reconnects < 4) {
                 reconnects++
-                showInfo(ch, "Nouvel essai avec un lien neuf ($reconnects/3)… (${error.errorCodeName})")
+                // Format non reconnu : on alterne HLS / MPEG-TS au prochain essai.
+                if (isFormatError(error)) stalkerHls = !stalkerHls
+                showInfo(ch, "Nouvel essai avec un lien neuf ($reconnects/4, ${if (stalkerHls) "HLS" else "TS"})… (${error.errorCodeName})")
                 handler.postDelayed({ if (list.getOrNull(index)?.key == ch.key) restartStalker(ch) }, 1500L * reconnects)
                 return
             }
@@ -413,6 +416,20 @@ class PlayerActivity : FragmentActivity() {
         }
     }
 
+    private var stalkerHls = false
+
+    private fun isFormatError(e: PlaybackException): Boolean {
+        var c: Throwable? = e
+        while (c != null) {
+            if (c is androidx.media3.common.ParserException) return true
+            c = c.cause
+        }
+        return e.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED ||
+            e.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED ||
+            e.errorCode == PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED ||
+            e.errorCode == PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED
+    }
+
     /** Redemande un lien de lecture au portail MAC et relance la lecture. */
     private fun restartStalker(ch: Channel) {
         lifecycleScope.launch {
@@ -420,7 +437,7 @@ class PlayerActivity : FragmentActivity() {
                 val url = StreamResolver.resolve(ch)
                 currentUrl = url
                 PlayerFactory.play(this@PlayerActivity, player, url, StreamResolver.userAgent(ch), ch.referer,
-                    forceHls = url.contains(".m3u8"), headers = StreamResolver.headers(ch))
+                    forceHls = stalkerHls || StreamResolver.looksHls(url), headers = StreamResolver.headers(ch))
             } catch (e: Exception) {
                 showInfo(ch, "Erreur : ${e.message}")
                 handler.removeCallbacks(hideInfo)
