@@ -155,7 +155,8 @@ object Repo {
             }
             SourceType.STALKER -> {
                 synchronized(stalkers) { stalkers.remove(s.id) }
-                stalker(s.id).channels()
+                val c = stalker(s.id)
+                c.channels() + try { c.vod() } catch (e: Exception) { Log.w("Repo", "stalker vod", e); emptyList() }
             }
             SourceType.YOUTUBE -> return@withContext channels(s.id).size
             SourceType.TUNER -> TunerSource.channels(app)
@@ -195,7 +196,15 @@ object Repo {
         val icons = HashMap<String, String>()
         val index = ArrayList<Pair<String, String>>()
         if (s.type == SourceType.STALKER) {
-            try { merged.putAll(stalker(s.id).epg()) } catch (e: Exception) { Log.w("Repo", "stalker epg", e) }
+            try {
+                val stk = stalker(s.id).epg()
+                merged.putAll(stk)
+                // Rattache aussi le guide du portail aux clés de chaque chaîne (xmltv_id, nom).
+                chans.forEach { c ->
+                    val id = c.key.substringAfter("|stk", "")
+                    stk["stk:$id"]?.let { l -> epgKeys(c).forEach { k -> merged.putIfAbsent(k, l) } }
+                }
+            } catch (e: Exception) { Log.w("Repo", "stalker epg", e) }
         }
         if (s.type == SourceType.TUNER) merged.putAll(TunerSource.programmes(app, chans, from, to))
         val own = s.epgUrl.ifBlank { autoEpgUrl(s.id) }.split(',').map { it.trim() }.filter { it.isNotBlank() }.take(3)
@@ -275,11 +284,11 @@ object Repo {
     suspend fun fetchShortEpg(ch: Channel) = withContext(Dispatchers.IO) {
         if (programmes(ch).isNotEmpty()) return@withContext
         val s = sources.firstOrNull { it.id == ch.sourceId } ?: return@withContext
-        if (s.type != SourceType.XTREAM) return@withContext
-        val sid = ch.key.substringAfter("|L", "")
+        if (s.type != SourceType.XTREAM && s.type != SourceType.STALKER) return@withContext
+        val sid = ch.key.substringAfter(if (s.type == SourceType.XTREAM) "|L" else "|stk", "")
         if (sid.isBlank()) return@withContext
         try {
-            val l = XtreamClient(s).shortEpg(sid)
+            val l = if (s.type == SourceType.XTREAM) XtreamClient(s).shortEpg(sid) else stalker(s.id).shortEpg(sid)
             if (l.isNotEmpty()) synchronized(this@Repo) { shortCache[ch.key] = l }
         } catch (_: Exception) {
         }

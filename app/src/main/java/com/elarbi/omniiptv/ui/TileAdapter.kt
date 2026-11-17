@@ -13,6 +13,7 @@ import com.elarbi.omniiptv.R
 import com.elarbi.omniiptv.data.Library
 import com.elarbi.omniiptv.data.Repo
 import com.elarbi.omniiptv.model.Channel
+import com.elarbi.omniiptv.model.isSeries
 
 /** Vignette (vue grille) : logo ou affiche, nom, programme ou progression. */
 class TileAdapter(private val ctx: Context, var items: List<Channel>) : BaseAdapter() {
@@ -27,7 +28,7 @@ class TileAdapter(private val ctx: Context, var items: List<Channel>) : BaseAdap
         val badge = v.findViewById<TextView>(R.id.tile_badge)
         badge.text = when {
             Repo.isFavorite(ch.key) -> "★"
-            ch.url.startsWith("xtseries:") -> "SÉRIE"
+            ch.isSeries -> "SÉRIE"
             ch.isVod -> "FILM"
             ch.archive > 0 -> "REPLAY"
             else -> "${position + 1}"

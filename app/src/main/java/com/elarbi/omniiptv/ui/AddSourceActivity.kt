@@ -45,7 +45,7 @@ class AddSourceActivity : FragmentActivity() {
 
         val title = findViewById<TextView>(R.id.form_title)
         val help = findViewById<TextView>(R.id.form_help)
-        val creds = type == SourceType.XTREAM
+        val creds = type == SourceType.XTREAM || type == SourceType.STALKER
         val mac = type == SourceType.STALKER
         fUser.visibility = if (creds) View.VISIBLE else View.GONE
         fPass.visibility = if (creds) View.VISIBLE else View.GONE
@@ -64,7 +64,10 @@ class AddSourceActivity : FragmentActivity() {
             }
             SourceType.STALKER -> {
                 title.text = "Portail MAC (Stalker / MAG)"
-                help.text = "Adresse du portail (http://portail:port/c/) et adresse MAC enregistrée auprès de votre fournisseur."
+                help.text = "Adresse du portail (http://portail:port/c/) et adresse MAC enregistrée auprès de votre fournisseur. " +
+                    "Identifiant et mot de passe : seulement si votre fournisseur en a donné."
+                fUser.hint = "Identifiant (facultatif)"
+                fPass.hint = "Mot de passe (facultatif)"
                 fUrl.hint = "URL du portail (http://exemple.com:8080/c/)"
             }
             SourceType.TUNER -> { finish(); return }

@@ -70,6 +70,9 @@ data class Channel(
     }
 }
 
+/** Entrée « série » (épisodes chargés à l'ouverture) : Xtream ou portail Stalker. */
+val Channel.isSeries: Boolean get() = url.startsWith("xtseries:") || url.startsWith("stkseries:")
+
 data class Programme(val start: Long, val end: Long, val title: String, val desc: String)
 
 data class ActionItem(val id: Int, val title: String, val subtitle: String, val icon: Int)

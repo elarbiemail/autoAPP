@@ -28,6 +28,7 @@ import com.elarbi.omniiptv.data.Prefs
 import com.elarbi.omniiptv.data.Repo
 import com.elarbi.omniiptv.home.HomeSyncWorker
 import com.elarbi.omniiptv.model.Channel
+import com.elarbi.omniiptv.model.isSeries
 
 /**
  * Accueil optimisé pour téléphone et tablette :
@@ -215,8 +216,8 @@ class MobileActivity : FragmentActivity() {
         val all = com.elarbi.omniiptv.data.Shown.channels()
         content = when (tab) {
             "live" -> all.filter { !it.isVod }
-            "movies" -> all.filter { it.isVod && !it.url.startsWith("xtseries:") }
-            "series" -> all.filter { it.url.startsWith("xtseries:") }
+            "movies" -> all.filter { it.isVod && !it.isSeries }
+            "series" -> all.filter { it.isSeries }
             else -> when (chip) {
                 "Continuer" -> Library.resume.values.toList()
                 "À regarder" -> Library.watchlist.values.toList()
@@ -272,11 +273,11 @@ class MobileActivity : FragmentActivity() {
     }
 
     private fun openItem(ch: Channel) {
-        if (ch.url.startsWith("xtseries:")) {
+        if (ch.isSeries) {
             startActivity(Intent(this, SeriesActivity::class.java).putExtra("key", ch.key))
             return
         }
-        Repo.playContext = shown.filter { !it.url.startsWith("xtseries:") }
+        Repo.playContext = shown.filter { !it.isSeries }
         startActivity(Intent(this, PlayerActivity::class.java).putExtra("key", ch.key))
     }
 

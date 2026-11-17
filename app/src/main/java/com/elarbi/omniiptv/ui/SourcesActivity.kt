@@ -61,18 +61,32 @@ class SourcesActivity : FragmentActivity() {
     private fun options(s: Source) {
         AlertDialog.Builder(this)
             .setTitle(s.name)
-            .setItems(arrayOf("Afficher cette source", "Actualiser chaînes et guide TV", "Modifier", "Supprimer")) { _, which ->
+            .setItems(
+                arrayOf("Afficher cette source", "Actualiser chaînes et guide TV", "Modifier", "Supprimer") +
+                    if (s.type == SourceType.STALKER) arrayOf("Infos du compte et diagnostic du portail") else emptyArray()
+            ) { _, which ->
                 when (which) {
                     0 -> { com.elarbi.omniiptv.data.Shown.showOnly(s.id); render() }
                     1 -> refresh(s)
                     2 -> if (s.type == SourceType.YOUTUBE) startActivity(Intent(this, YoutubeActivity::class.java))
                     else startActivity(Intent(this, AddSourceActivity::class.java).putExtra("id", s.id))
+                    4 -> diagnostic(s)
                     3 -> AlertDialog.Builder(this).setTitle("Supprimer « ${s.name} » ?")
                         .setPositiveButton("Supprimer") { _, _ -> Repo.removeSource(s.id); render() }
                         .setNegativeButton("Annuler", null).show()
                 }
             }
             .show()
+    }
+
+    private fun diagnostic(s: Source) {
+        Ui.toast(this, "Connexion au portail…")
+        lifecycleScope.launch {
+            val text = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                try { com.elarbi.omniiptv.data.StalkerClient(s).diagnostic() } catch (e: Exception) { "Erreur : ${e.message}" }
+            }
+            AlertDialog.Builder(this@SourcesActivity).setTitle(s.name).setMessage(text).setPositiveButton("OK", null).show()
+        }
     }
 
     private fun refresh(s: Source) {

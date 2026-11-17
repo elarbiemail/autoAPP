@@ -9,6 +9,10 @@ object StreamResolver {
     suspend fun resolve(ch: Channel): String = withContext(Dispatchers.IO) {
         when {
             ch.url.startsWith("stalker:") -> Repo.stalker(ch.sourceId).createLink(ch.url.removePrefix("stalker:"))
+            ch.url.startsWith("stkvod:") -> {
+                val v = ch.url.removePrefix("stkvod:")
+                Repo.stalker(ch.sourceId).createLink(v.substringAfter(':'), "vod", v.substringBefore(':'))
+            }
             YouTube.isYouTube(ch.url) -> YouTube.resolveForChannel(ch.key, ch.url)
             else -> ch.url
         }

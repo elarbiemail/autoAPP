@@ -18,6 +18,7 @@ import com.elarbi.omniiptv.data.Library
 import com.elarbi.omniiptv.data.Repo
 import com.elarbi.omniiptv.home.HomeSyncWorker
 import com.elarbi.omniiptv.model.Channel
+import com.elarbi.omniiptv.model.isSeries
 
 /**
  * Vues « Liste » et « Grille » avec onglets de contenus :
@@ -107,8 +108,8 @@ class BrowseActivity : FragmentActivity() {
         val all = com.elarbi.omniiptv.data.Shown.channels()
         content = when (tab) {
             "live" -> all.filter { !it.isVod }
-            "movies" -> all.filter { it.isVod && !it.url.startsWith("xtseries:") }
-            "series" -> all.filter { it.url.startsWith("xtseries:") }
+            "movies" -> all.filter { it.isVod && !it.isSeries }
+            "series" -> all.filter { it.isSeries }
             "fav" -> Repo.favorites.values.map { Edits.apply(it) }
             "resume" -> Library.resume.values.toList()
             "watch" -> Library.watchlist.values.toList()
@@ -134,11 +135,11 @@ class BrowseActivity : FragmentActivity() {
     }
 
     private fun openItem(ch: Channel) {
-        if (ch.url.startsWith("xtseries:")) {
+        if (ch.isSeries) {
             startActivity(Intent(this, SeriesActivity::class.java).putExtra("key", ch.key))
             return
         }
-        Repo.playContext = shown.filter { !it.url.startsWith("xtseries:") }
+        Repo.playContext = shown.filter { !it.isSeries }
         startActivity(Intent(this, PlayerActivity::class.java).putExtra("key", ch.key))
     }
 

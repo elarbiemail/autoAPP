@@ -108,10 +108,17 @@ class PlayerActivity : FragmentActivity() {
             updateTech()
             if (showStats) statsView.text = statsText()
             saveProgress(false)
+            watchdogTick++
+            if (watchdogTick % 120 == 0) list.getOrNull(index)?.let { ch ->
+                if (ch.url.startsWith("stalker:") || ch.url.startsWith("stkvod:")) {
+                    lifecycleScope.launch(Dispatchers.IO) { try { Repo.stalker(ch.sourceId).watchdog() } catch (_: Exception) {} }
+                }
+            }
             handler.postDelayed(this, 1000)
         }
     }
     private var tick = 0
+    private var watchdogTick = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

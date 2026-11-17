@@ -16,6 +16,7 @@ import com.elarbi.omniiptv.data.Library
 import com.elarbi.omniiptv.data.Prefs
 import com.elarbi.omniiptv.data.Repo
 import com.elarbi.omniiptv.model.Channel
+import com.elarbi.omniiptv.model.isSeries
 import com.elarbi.omniiptv.ui.Ui
 import androidx.tvprovider.media.tv.Channel as TvChannel
 
@@ -95,7 +96,7 @@ object HomeScreen {
             .setWeight(weight)
         if (ch.isVod) {
             val p = Library.progress(ch.key)
-            b.setType(if (ch.url.startsWith("xtseries:") || ch.key.contains("|E")) TvContractCompat.PreviewPrograms.TYPE_TV_EPISODE else TvContractCompat.PreviewPrograms.TYPE_MOVIE)
+            b.setType(if (ch.isSeries || ch.key.contains("|E")) TvContractCompat.PreviewPrograms.TYPE_TV_EPISODE else TvContractCompat.PreviewPrograms.TYPE_MOVIE)
                 .setTitle(ch.name)
                 .setDescription((if (p != null) "Reprendre à $p % · " else "") + ch.group)
                 .setPosterArtUri(poster(ctx, ch))

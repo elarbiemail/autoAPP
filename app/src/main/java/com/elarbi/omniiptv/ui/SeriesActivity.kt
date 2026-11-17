@@ -57,7 +57,10 @@ class SeriesActivity : FragmentActivity() {
         status.text = "Chargement des épisodes…"
         lifecycleScope.launch {
             try {
-                episodes = withContext(Dispatchers.IO) { XtreamClient(src).episodes(s.url.removePrefix("xtseries:"), s.name) }
+                episodes = withContext(Dispatchers.IO) {
+                    if (s.url.startsWith("stkseries:")) Repo.stalker(src.id).episodes(s.url, s.name)
+                    else XtreamClient(src).episodes(s.url.removePrefix("xtseries:"), s.name)
+                }
                 adapter.items = episodes
                 adapter.notifyDataSetChanged()
                 status.text = "${episodes.size} épisodes"

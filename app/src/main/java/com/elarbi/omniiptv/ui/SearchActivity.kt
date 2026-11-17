@@ -14,6 +14,7 @@ import androidx.lifecycle.lifecycleScope
 import com.elarbi.omniiptv.R
 import com.elarbi.omniiptv.data.Repo
 import com.elarbi.omniiptv.model.Channel
+import com.elarbi.omniiptv.model.isSeries
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -38,7 +39,7 @@ class ChannelSearchFragment : SearchSupportFragment(), SearchSupportFragment.Sea
         super.onCreate(savedInstanceState)
         setSearchResultProvider(this)
         setOnItemViewClickedListener(OnItemViewClickedListener { _, item, _, row ->
-            if (item is Channel && item.url.startsWith("xtseries:")) {
+            if (item is Channel && item.isSeries) {
                 startActivity(Intent(requireContext(), SeriesActivity::class.java).putExtra("key", item.key))
             } else if (item is Channel) {
                 val a = (row as? ListRow)?.adapter

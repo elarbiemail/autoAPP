@@ -21,6 +21,7 @@ import com.elarbi.omniiptv.home.HomeScreen
 import com.elarbi.omniiptv.home.HomeSyncWorker
 import com.elarbi.omniiptv.model.ActionItem
 import com.elarbi.omniiptv.model.Channel
+import com.elarbi.omniiptv.model.isSeries
 import com.elarbi.omniiptv.model.SourceType
 import com.elarbi.omniiptv.tif.TifSync
 import kotlinx.coroutines.Dispatchers
@@ -108,7 +109,7 @@ class MainFragment : BrowseSupportFragment() {
     private fun onClick(item: Any?, row: ListRow?) {
         when (item) {
             is Channel -> {
-                if (item.url.startsWith("xtseries:")) {
+                if (item.isSeries) {
                     startActivity(Intent(requireContext(), SeriesActivity::class.java).putExtra("key", item.key))
                     return
                 }

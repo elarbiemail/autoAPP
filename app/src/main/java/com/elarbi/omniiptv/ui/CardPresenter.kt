@@ -11,6 +11,7 @@ import com.elarbi.omniiptv.data.Library
 import com.elarbi.omniiptv.data.Repo
 import com.elarbi.omniiptv.model.ActionItem
 import com.elarbi.omniiptv.model.Channel
+import com.elarbi.omniiptv.model.isSeries
 
 class CardPresenter(private val onLong: (Any) -> Unit) : Presenter() {
 
@@ -36,7 +37,7 @@ class CardPresenter(private val onLong: (Any) -> Unit) : Presenter() {
                 val now = if (item.isVod) null else Repo.nowNext(item).first
                 card.contentText = when {
                     pct != null -> "▶ vu à $pct %"
-                    item.url.startsWith("xtseries:") -> "Série · ${item.group.removePrefix("Séries · ")}"
+                    item.isSeries -> "Série · ${item.group.removePrefix("Séries · ")}"
                     now != null -> "${Ui.hm(now.start)} ${now.title}"
                     else -> item.group
                 }
