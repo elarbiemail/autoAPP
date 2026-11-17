@@ -252,6 +252,7 @@ class PlayerActivity : FragmentActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             Repo.addRecent(ch)
             if (!ch.isVod) HomeScreen.addWatchNext(applicationContext, ch)
+            com.elarbi.omniiptv.home.Shortcuts.update(applicationContext)
             Repo.fetchShortEpg(ch)
         }
         job?.cancel()

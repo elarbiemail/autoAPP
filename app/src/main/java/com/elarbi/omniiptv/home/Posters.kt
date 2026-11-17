@@ -42,7 +42,7 @@ object Posters {
         val bmp = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
         val bg = Paint().apply {
-            shader = LinearGradient(0f, 0f, W.toFloat(), H.toFloat(), Color.parseColor("#1E4D7B"), Color.parseColor("#0B1320"), Shader.TileMode.CLAMP)
+            shader = LinearGradient(0f, 0f, W.toFloat(), H.toFloat(), com.elarbi.omniiptv.ui.ThemeManager.brand, com.elarbi.omniiptv.ui.ThemeManager.background, Shader.TileMode.CLAMP)
         }
         c.drawRect(0f, 0f, W.toFloat(), H.toFloat(), bg)
         // Logo à gauche
@@ -63,7 +63,7 @@ object Posters {
         c.drawRoundRect(RectF(292f, 44f, 432f, 80f), 8f, 8f, Paint().apply { color = Color.parseColor("#E53935") })
         c.drawText("EN DIRECT", 304f, 70f, badge)
         // Nom de la chaîne
-        val chp = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#FF9F1C"); textSize = 28f; typeface = Typeface.DEFAULT_BOLD }
+        val chp = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = com.elarbi.omniiptv.ui.ThemeManager.accent; textSize = 28f; typeface = Typeface.DEFAULT_BOLD }
         c.drawText(TextUtils.ellipsize(ch.name, chp, 320f, TextUtils.TruncateAt.END).toString(), 292f, 120f, chp)
         val sub = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#B0BEC5"); textSize = 22f }
         c.drawText(TextUtils.ellipsize(ch.group, sub, 320f, TextUtils.TruncateAt.END).toString(), 292f, 156f, sub)
@@ -76,7 +76,7 @@ object Posters {
             val t = System.currentTimeMillis()
             val pct = ((t - now.start).toFloat() / (now.end - now.start).coerceAtLeast(1)).coerceIn(0f, 1f)
             c.drawRect(28f, 296f, W - 28f, 304f, Paint().apply { color = Color.argb(70, 255, 255, 255) })
-            c.drawRect(28f, 296f, 28f + (W - 56f) * pct, 304f, Paint().apply { color = Color.parseColor("#FF9F1C") })
+            c.drawRect(28f, 296f, 28f + (W - 56f) * pct, 304f, Paint().apply { color = com.elarbi.omniiptv.ui.ThemeManager.accent })
         }
         if (next != null) {
             c.drawText(TextUtils.ellipsize("Ensuite ${Ui.hm(next.start)} · ${next.title}", sub, W - 56f, TextUtils.TruncateAt.END).toString(), 28f, 338f, sub)

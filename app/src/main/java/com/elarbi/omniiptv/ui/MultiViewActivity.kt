@@ -85,7 +85,7 @@ class MultiViewActivity : FragmentActivity() {
     private fun select(i: Int) {
         sel = i
         cells.forEachIndexed { n, c ->
-            c.background = if (n == i) GradientDrawable().apply { setStroke(8, 0xFFFF9F1C.toInt()) } else null
+            c.background = if (n == i) GradientDrawable().apply { setStroke(8, ThemeManager.accent) } else null
         }
         players.forEachIndexed { n, p -> p?.volume = if (n == i) 1f else 0f }
     }
@@ -109,7 +109,7 @@ class MultiViewActivity : FragmentActivity() {
     private fun candidates(): List<Channel> {
         val fav = Repo.favorites.values.filter { !it.isVod }.map { Edits.apply(it) }
         val src = Repo.activeSource()
-        val live = if (src != null) Edits.view(src.id).filter { !it.isVod } else emptyList()
+        val live = com.elarbi.omniiptv.data.Shown.channels().filter { !it.isVod }
         return (fav + Repo.playContext.filter { !it.isVod } + live).filter { !it.url.startsWith("tuner:") }.distinctBy { it.key }.take(1500)
     }
 

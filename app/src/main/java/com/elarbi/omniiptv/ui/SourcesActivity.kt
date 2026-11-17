@@ -33,12 +33,14 @@ class SourcesActivity : FragmentActivity() {
     private fun render() {
         container.removeAllViews()
         info.text = "Adresse MAC de cet appareil (à donner à votre fournisseur pour un portail MAC) : ${Repo.deviceMac}\n" +
-            "Source affichée : ${Repo.activeSource()?.name ?: "aucune"}"
+            "Sources affichées : ${com.elarbi.omniiptv.data.Shown.title()}"
         val active = Repo.activeSourceId
+        val shownIds = com.elarbi.omniiptv.data.Shown.sources().map { it.id }
         Repo.sources.forEach { s ->
-            val mark = if (s.id == active) "● " else "○ "
+            val mark = if (s.id in shownIds) "● " else "○ "
             container.addView(Ui.button(this, "$mark${s.name}  —  ${s.typeLabel}  (${Repo.channels(s.id).size} chaînes)") { options(s) })
         }
+        container.addView(Ui.button(this, "☰ Afficher plusieurs sources ensemble…") { SourcePicker.pickSeveral(this) { render() } })
         container.addView(Ui.button(this, "＋ Ajouter une liste M3U") { add(SourceType.M3U) })
         container.addView(Ui.button(this, "＋ Ajouter Xtream Codes") { add(SourceType.XTREAM) })
         container.addView(Ui.button(this, "＋ Ajouter un portail MAC") { add(SourceType.STALKER) })
@@ -61,7 +63,7 @@ class SourcesActivity : FragmentActivity() {
             .setTitle(s.name)
             .setItems(arrayOf("Afficher cette source", "Actualiser chaînes et guide TV", "Modifier", "Supprimer")) { _, which ->
                 when (which) {
-                    0 -> { Repo.activeSourceId = s.id; render() }
+                    0 -> { com.elarbi.omniiptv.data.Shown.showOnly(s.id); render() }
                     1 -> refresh(s)
                     2 -> if (s.type == SourceType.YOUTUBE) startActivity(Intent(this, YoutubeActivity::class.java))
                     else startActivity(Intent(this, AddSourceActivity::class.java).putExtra("id", s.id))

@@ -24,7 +24,7 @@
             <Button android:id="@+id/yt_test" style="@style/Btn" android:text="Tester le direct" />
         </LinearLayout>
         <TextView android:id="@+id/yt_status" android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:layout_marginTop="10dp" android:textColor="@color/accent" android:textSize="16sp" />
+            android:layout_marginTop="10dp" android:textColor="?attr/omniAccent" android:textSize="16sp" />
         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="16dp"
             android:text="Suggestions (directs officiels)" android:textColor="#FFFFFF" android:textSize="20sp" android:textStyle="bold" />
         <LinearLayout android:id="@+id/yt_presets" android:layout_width="match_parent" android:layout_height="wrap_content"

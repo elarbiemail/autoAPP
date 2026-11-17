@@ -44,8 +44,8 @@ class MainFragment : BrowseSupportFragment() {
         title = getString(R.string.app_name)
         headersState = HEADERS_ENABLED
         isHeadersTransitionOnBackEnabled = true
-        brandColor = ContextCompat.getColor(requireContext(), R.color.brand)
-        searchAffordanceColor = ContextCompat.getColor(requireContext(), R.color.accent)
+        brandColor = ThemeManager.brand
+        searchAffordanceColor = ThemeManager.accent
         adapter = rowsAdapter
         setOnSearchClickedListener { startActivity(Intent(requireContext(), SearchActivity::class.java)) }
         onItemViewClickedListener = OnItemViewClickedListener { _, item, _, row -> onClick(item, row as? ListRow) }
@@ -99,10 +99,10 @@ class MainFragment : BrowseSupportFragment() {
         val src = Repo.activeSource()
         if (src != null) {
             val groups = LinkedHashMap<String, MutableList<Channel>>()
-            Edits.view(src.id).forEach { groups.getOrPut(it.group.ifBlank { "Sans catégorie" }) { mutableListOf() }.add(it) }
+            com.elarbi.omniiptv.data.Shown.channels().forEach { groups.getOrPut(it.group.ifBlank { "Sans catégorie" }) { mutableListOf() }.add(it) }
             groups.forEach { (g, l) -> addRow(g, l) }
         }
-        if (src?.id != Repo.YT_ID) addRow("YouTube Live", Repo.youtubeChannels())
+        if (com.elarbi.omniiptv.data.Shown.sources().none { it.id == Repo.YT_ID }) addRow("YouTube Live", Repo.youtubeChannels())
     }
 
     private fun onClick(item: Any?, row: ListRow?) {
@@ -134,6 +134,11 @@ class MainFragment : BrowseSupportFragment() {
             Ui.toast(ctx, if (Library.toggleWatch(item)) "Ajouté à « À regarder »" else "Retiré de « À regarder »")
         }
         if (Library.resume.containsKey(item.key)) opts += "Retirer de « Continuer la lecture »" to { Library.finish(item) }
+        opts += "Ajouter un raccourci sur l'écran d'accueil" to {
+            if (!com.elarbi.omniiptv.home.Shortcuts.pin(ctx, item)) {
+                Ui.toast(ctx, "Sur le téléviseur : ajoutez-le aux favoris, il apparaîtra dans la rangée Omni IPTV de l'accueil.")
+            }
+        }
         if (Repo.sources.any { it.id == item.sourceId }) {
             opts += "Masquer" to { Edits.update(item.sourceId, item.key) { it.hidden = true } }
             opts += "Gérer les chaînes…" to {

@@ -20,13 +20,13 @@
         android:layout_weight="1" android:orientation="horizontal">
         <ListView android:id="@+id/br_groups" android:layout_width="0dp" android:layout_height="match_parent"
             android:layout_weight="1" android:background="#22FFFFFF" android:choiceMode="singleChoice"
-            android:listSelector="@color/accent" />
+            android:listSelector="?attr/omniAccent" />
         <FrameLayout android:layout_width="0dp" android:layout_height="match_parent" android:layout_marginStart="14dp"
             android:layout_weight="3">
             <ListView android:id="@+id/br_list" android:layout_width="match_parent" android:layout_height="match_parent"
-                android:listSelector="@color/accent" />
+                android:listSelector="?attr/omniAccent" />
             <GridView android:id="@+id/br_grid" android:layout_width="match_parent" android:layout_height="match_parent"
-                android:columnWidth="190dp" android:horizontalSpacing="10dp" android:listSelector="@color/accent"
+                android:columnWidth="190dp" android:horizontalSpacing="10dp" android:listSelector="?attr/omniAccent"
                 android:numColumns="auto_fit" android:stretchMode="columnWidth" android:verticalSpacing="10dp"
                 android:visibility="gone" />
         </FrameLayout>

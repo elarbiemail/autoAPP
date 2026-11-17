@@ -86,17 +86,16 @@ object AppActions {
     }
 
     fun refresh(a: FragmentActivity, done: (() -> Unit)? = null) {
-        val s = Repo.activeSource() ?: run { Ui.toast(a, "Ajoutez d'abord une source."); done?.invoke(); return }
+        val list = com.elarbi.omniiptv.data.Shown.sources()
+        if (list.isEmpty()) { Ui.toast(a, "Ajoutez d'abord une source."); done?.invoke(); return }
         a.lifecycleScope.launch {
-            try {
-                val n = Repo.refresh(s)
-                Ui.toast(a, "$n éléments chargés depuis « ${s.name} »")
-                HomeSyncWorker.runNow(a)
-            } catch (e: Exception) {
-                Ui.toast(a, "Échec du chargement : ${e.message}")
-            } finally {
-                done?.invoke()
+            val msgs = ArrayList<String>()
+            for (s in list) {
+                msgs += try { "${s.name} : ${Repo.refresh(s)}" } catch (e: Exception) { "${s.name} : échec (${e.message})" }
             }
+            Ui.toast(a, msgs.joinToString("\n"))
+            HomeSyncWorker.runNow(a)
+            done?.invoke()
         }
     }
 

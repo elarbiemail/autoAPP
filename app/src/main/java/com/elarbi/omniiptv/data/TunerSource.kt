@@ -107,6 +107,49 @@ object TunerSource {
         return res
     }
 
+    data class Input(val id: String, val label: String, val passthrough: Boolean, val kind: String)
+
+    /** Entrées du téléviseur : HDMI, tuner TNT / satellite / câble, autres sources. */
+    fun inputs(ctx: Context): List<Input> {
+        val tim = ctx.getSystemService(Context.TV_INPUT_SERVICE) as? TvInputManager ?: return emptyList()
+        val own = TifSync.inputId(ctx)
+        return try {
+            tim.tvInputList.filter { it.id != own }.map { i ->
+                val kind = when (i.type) {
+                    android.media.tv.TvInputInfo.TYPE_HDMI -> "HDMI"
+                    android.media.tv.TvInputInfo.TYPE_TUNER -> "Antenne / satellite / câble"
+                    android.media.tv.TvInputInfo.TYPE_COMPONENT, android.media.tv.TvInputInfo.TYPE_COMPOSITE,
+                    android.media.tv.TvInputInfo.TYPE_SCART, android.media.tv.TvInputInfo.TYPE_SVIDEO,
+                    android.media.tv.TvInputInfo.TYPE_VGA, android.media.tv.TvInputInfo.TYPE_DVI -> "Entrée vidéo"
+                    else -> "Application TV"
+                }
+                Input(i.id, i.loadLabel(ctx).toString(), i.isPassthroughInput, kind)
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    /** Chaîne « virtuelle » pour afficher une entrée HDMI dans l'application. */
+    fun inputChannel(i: Input) = Channel(
+        key = "$ID|input_${i.id.hashCode()}", sourceId = ID, name = i.label,
+        url = "tuner:${i.id}|" + TvContract.buildChannelUriForPassthroughInput(i.id).toString(),
+        group = i.kind
+    )
+
+    /** Ouvre l'application TV du téléviseur (pour les chaînes réservées à celle-ci). */
+    fun openTvApp(ctx: Context): Boolean {
+        val probe = android.content.Intent(android.content.Intent.ACTION_VIEW, TvContract.buildChannelUri(1))
+        val pkg = ctx.packageManager.resolveActivity(probe, 0)?.activityInfo?.packageName
+        val launch = pkg?.let { ctx.packageManager.getLeanbackLaunchIntentForPackage(it) ?: ctx.packageManager.getLaunchIntentForPackage(it) }
+        return try {
+            ctx.startActivity((launch ?: probe).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     /** Sépare « tuner:inputId|uriChaîne ». */
     fun parse(url: String): Pair<String, String>? {
         val v = url.removePrefix("tuner:")

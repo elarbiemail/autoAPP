@@ -38,7 +38,7 @@ class SettingsActivity : FragmentActivity() {
     }
 
     private fun title(t: String) = box.addView(TextView(this).apply {
-        text = t; textSize = 20f; setTextColor(0xFFFF9F1C.toInt()); setPadding(0, Ui.dp(this@SettingsActivity, 16), 0, Ui.dp(this@SettingsActivity, 4))
+        text = t; textSize = 20f; setTextColor(ThemeManager.accent); setPadding(0, Ui.dp(this@SettingsActivity, 16), 0, Ui.dp(this@SettingsActivity, 4))
     })
 
     private fun item(label: String, action: () -> Unit) = box.addView(Ui.button(this, label) { action(); render() })
@@ -72,10 +72,12 @@ class SettingsActivity : FragmentActivity() {
 
         title("Sources et contenus")
         go("Mes sources (afficher, actualiser, modifier, supprimer)", SourcesActivity::class.java)
+        item("Sources affichées : ${com.elarbi.omniiptv.data.Shown.title()}") { SourcePicker.pickSeveral(this) { render() } }
         add("＋ Ajouter une liste M3U", SourceType.M3U)
         add("＋ Ajouter un compte Xtream Codes", SourceType.XTREAM)
         add("＋ Ajouter un portail MAC (Stalker)", SourceType.STALKER)
         main("＋ Chaînes du téléviseur (TNT, satellite, câble)", MainFragment.A_TUNER)
+        item("Entrées du téléviseur (HDMI, antenne, satellite…)") { tvInputs() }
         go("Chaînes YouTube Live", YoutubeActivity::class.java)
         go("Dépôts (installer des listes en un clic)", ReposActivity::class.java)
         go("Listes gratuites et légales", FreeSearchActivity::class.java)
@@ -106,6 +108,12 @@ class SettingsActivity : FragmentActivity() {
         main("Rangée Omni IPTV : mettre à jour et explications", MainFragment.A_HOME)
         main("Ajouter la rangée « En ce moment »", MainFragment.A_HOME_LIVE)
         main("Publier les chaînes dans l'onglet Direct", MainFragment.A_LIVE_TAB)
+
+        title("Thème")
+        val preset = ThemeManager.presets.firstOrNull { it.second == Prefs.themeBg && it.third == Prefs.themeAccent }?.first ?: "personnalisé"
+        item("Thème : $preset  (changer)") { themePresets() }
+        item("Couleur de fond : ${ThemeManager.bg().label}") { themePick(true) }
+        item("Couleur d'accent : ${ThemeManager.accentDef().label}") { themePick(false) }
 
         title("Démarrage")
         item("Lancer la dernière chaîne regardée : ${onOff(Prefs.autoPlayLast)}") { Prefs.autoPlayLast = !Prefs.autoPlayLast }
@@ -157,6 +165,78 @@ class SettingsActivity : FragmentActivity() {
             Repo.activeSourceId?.let { Edits.reset(it) }
             Ui.toast(this, "Personnalisations réinitialisées")
         }
+    }
+
+    /** Liste des entrées du téléviseur : HDMI affiché dans l'application, tuner via l'application TV. */
+    private fun tvInputs() {
+        val inputs = TunerSource.inputs(this)
+        if (inputs.isEmpty()) { Ui.toast(this, "Aucune entrée TV détectée sur cet appareil."); return }
+        val labels = inputs.map { "${it.label}  ·  ${it.kind}" } + "Ouvrir l'application TV du téléviseur"
+        AlertDialog.Builder(this).setTitle("Entrées du téléviseur")
+            .setItems(labels.toTypedArray()) { _, w ->
+                if (w == inputs.size) { if (!TunerSource.openTvApp(this)) Ui.toast(this, "Application TV introuvable."); return@setItems }
+                val i = inputs[w]
+                if (i.passthrough) {
+                    val ch = TunerSource.inputChannel(i)
+                    com.elarbi.omniiptv.data.Repo.playContext = listOf(ch)
+                    startActivity(android.content.Intent(this, PlayerActivity::class.java).putExtra("key", ch.key))
+                } else {
+                    AlertDialog.Builder(this).setTitle(i.label)
+                        .setMessage(
+                            "Android réserve l'image du tuner intégré (TNT, satellite, câble) à l'application TV du téléviseur : " +
+                                "une application tierce ne peut pas l'afficher elle-même.\n\n" +
+                                "Omni IPTV peut lister ces chaînes avec leurs programmes (« Chaînes du téléviseur ») et basculer " +
+                                "sur la chaîne choisie dans l'application TV."
+                        )
+                        .setPositiveButton("Ouvrir l'application TV") { _, _ -> TunerSource.openTvApp(this) }
+                        .setNegativeButton("Fermer", null).show()
+                }
+            }.show()
+    }
+
+    private fun restartForTheme() {
+        Ui.toast(this, "Thème appliqué")
+        startActivity(android.content.Intent(this, MainActivity::class.java)
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK))
+        startActivity(android.content.Intent(this, SettingsActivity::class.java))
+        com.elarbi.omniiptv.home.HomeSyncWorker.runNow(this)
+    }
+
+    private fun themePresets() {
+        val p = ThemeManager.presets
+        val labels = p.map { (name, bg, ac) ->
+            "$name — ${ThemeManager.backgrounds.first { it.id == bg }.label} / ${ThemeManager.accents.first { it.id == ac }.label}"
+        }
+        AlertDialog.Builder(this).setTitle("Thèmes")
+            .setItems(labels.toTypedArray()) { _, w ->
+                Prefs.themeBg = p[w].second
+                Prefs.themeAccent = p[w].third
+                restartForTheme()
+            }.show()
+    }
+
+    private fun themePick(background: Boolean) {
+        val labels = if (background) ThemeManager.backgrounds.map { it.label } else ThemeManager.accents.map { it.label }
+        val adapter = object : android.widget.ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, labels) {
+            override fun getView(position: Int, convertView: android.view.View?, parent: android.view.ViewGroup): android.view.View {
+                val v = super.getView(position, convertView, parent) as TextView
+                val color = if (background) ThemeManager.backgrounds[position].brand else ThemeManager.accents[position].color
+                val dot = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.OVAL
+                    setColor(color)
+                    setStroke(2, 0x66FFFFFF.toInt())
+                    setSize(Ui.dp(this@SettingsActivity, 22), Ui.dp(this@SettingsActivity, 22))
+                }
+                v.setCompoundDrawablesWithIntrinsicBounds(dot, null, null, null)
+                v.compoundDrawablePadding = Ui.dp(this@SettingsActivity, 14)
+                return v
+            }
+        }
+        AlertDialog.Builder(this).setTitle(if (background) "Couleur de fond" else "Couleur d'accent")
+            .setAdapter(adapter) { _, w ->
+                if (background) Prefs.themeBg = ThemeManager.backgrounds[w].id else Prefs.themeAccent = ThemeManager.accents[w].id
+                restartForTheme()
+            }.show()
     }
 
     private fun pinDialog() {

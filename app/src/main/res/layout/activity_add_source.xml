@@ -33,7 +33,7 @@
         <EditText android:id="@+id/f_ua" style="@style/Field" android:hint="User-Agent personnalisé (facultatif)" android:inputType="text" />
 
         <TextView android:id="@+id/form_status" android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:layout_marginTop="12dp" android:textColor="@color/accent" android:textSize="16sp" />
+            android:layout_marginTop="12dp" android:textColor="?attr/omniAccent" android:textSize="16sp" />
 
         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp"
             android:orientation="horizontal">

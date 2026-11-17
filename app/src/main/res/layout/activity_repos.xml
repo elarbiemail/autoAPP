@@ -23,7 +23,7 @@
             <Button android:id="@+id/repo_refresh" style="@style/Btn" android:text="Tout mettre à jour" />
         </LinearLayout>
         <TextView android:id="@+id/repo_status" android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:layout_marginTop="10dp" android:textColor="@color/accent" android:textSize="16sp" />
+            android:layout_marginTop="10dp" android:textColor="?attr/omniAccent" android:textSize="16sp" />
         <LinearLayout android:id="@+id/repo_list" android:layout_width="match_parent" android:layout_height="wrap_content"
             android:layout_marginTop="8dp" android:orientation="vertical" />
     </LinearLayout>

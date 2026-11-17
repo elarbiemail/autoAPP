@@ -104,7 +104,7 @@ class BrowseActivity : FragmentActivity() {
     private fun load() {
         builtVersion = Repo.version
         val src = Repo.activeSource()
-        val all = if (src != null) Edits.view(src.id) else emptyList()
+        val all = com.elarbi.omniiptv.data.Shown.channels()
         content = when (tab) {
             "live" -> all.filter { !it.isVod }
             "movies" -> all.filter { it.isVod && !it.url.startsWith("xtseries:") }
@@ -120,7 +120,7 @@ class BrowseActivity : FragmentActivity() {
             val n = if (i == 0) content.size else content.count { it.group == g }
             "$g ($n)"
         })
-        status.text = "${src?.name ?: "Aucune source"} • ${tabs.first { it.first == tab }.second} : ${content.size} éléments" +
+        status.text = "${if (src == null) "Aucune source" else com.elarbi.omniiptv.data.Shown.title()} • ${tabs.first { it.first == tab }.second} : ${content.size} éléments" +
             if (content.isEmpty() && tab in listOf("movies", "series")) " (disponible avec un compte Xtream)" else ""
         groupsView.setSelection(0)
         showGroup(0)
@@ -149,6 +149,11 @@ class BrowseActivity : FragmentActivity() {
         }
         opts += (if (Library.isWatch(ch.key)) "Retirer de « À regarder »" else "Ajouter à « À regarder »") to { Library.toggleWatch(ch) }
         if (Library.resume.containsKey(ch.key)) opts += "Retirer de « Continuer »" to { Library.finish(ch) }
+        opts += "Ajouter un raccourci sur l'écran d'accueil" to {
+            if (!com.elarbi.omniiptv.home.Shortcuts.pin(this, ch)) {
+                Ui.toast(this, "Sur ce téléviseur, les favoris et films en cours apparaissent dans la rangée Omni IPTV de l'accueil.")
+            }
+        }
         if (Repo.sources.any { it.id == ch.sourceId }) {
             opts += "Masquer" to { Edits.update(ch.sourceId, ch.key) { it.hidden = true } }
             opts += "Gérer les chaînes…" to {

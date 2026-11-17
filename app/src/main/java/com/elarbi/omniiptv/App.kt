@@ -20,7 +20,9 @@ class App : Application() {
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
             override fun onActivityStarted(activity: Activity) { foreground++ }
             override fun onActivityStopped(activity: Activity) { foreground = (foreground - 1).coerceAtLeast(0) }
-            override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
+            override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {
+                try { com.elarbi.omniiptv.ui.ThemeManager.apply(activity) } catch (_: Exception) {}
+            }
             override fun onActivityResumed(activity: Activity) {}
             override fun onActivityPaused(activity: Activity) {}
             override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}

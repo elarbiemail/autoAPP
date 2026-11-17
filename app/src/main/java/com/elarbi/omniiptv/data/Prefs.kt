@@ -41,6 +41,19 @@ object Prefs {
         get() = p.getString("uiMode", "auto") ?: "auto"
         set(v) = p.edit().putString("uiMode", v).apply()
 
+    /** Sources affichées ensemble (vide = la source active seule). */
+    var shownSources: Set<String>
+        get() = p.getStringSet("shownSources", emptySet())?.toSet() ?: emptySet()
+        set(v) { p.edit().putStringSet("shownSources", v).apply(); Repo.bump() }
+
+    var themeBg: String
+        get() = p.getString("themeBg", "night") ?: "night"
+        set(v) = p.edit().putString("themeBg", v).apply()
+
+    var themeAccent: String
+        get() = p.getString("themeAccent", "orange") ?: "orange"
+        set(v) = p.edit().putString("themeAccent", v).apply()
+
     var showClock: Boolean
         get() = p.getBoolean("showClock", true)
         set(v) = p.edit().putBoolean("showClock", v).apply()

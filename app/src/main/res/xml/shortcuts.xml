@@ -15,9 +15,4 @@
         <intent android:action="android.intent.action.VIEW" android:targetPackage="com.elarbi.omniiptv"
             android:targetClass="com.elarbi.omniiptv.ui.SearchActivity" />
     </shortcut>
-    <shortcut android:shortcutId="derniere" android:enabled="true" android:icon="@drawable/ic_refresh"
-        android:shortcutShortLabel="@string/sc_last" android:shortcutLongLabel="@string/sc_last">
-        <intent android:action="android.intent.action.VIEW" android:targetPackage="com.elarbi.omniiptv"
-            android:targetClass="com.elarbi.omniiptv.ui.MobileActivity" android:data="omniiptv://mobile/last" />
-    </shortcut>
 </shortcuts>

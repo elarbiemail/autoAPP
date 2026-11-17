@@ -95,8 +95,8 @@ class MobileActivity : FragmentActivity() {
             override fun afterTextChanged(s: Editable?) { showContent() }
         })
 
-        refresh.setColorSchemeColors(ContextCompat.getColor(this, R.color.accent))
-        refresh.setProgressBackgroundColorSchemeColor(ContextCompat.getColor(this, R.color.brand))
+        refresh.setColorSchemeColors(ThemeManager.accent)
+        refresh.setProgressBackgroundColorSchemeColor(ThemeManager.brand)
         refresh.setOnChildScrollUpCallback { _, _ ->
             val v = if (gridView.visibility == View.VISIBLE) gridView else listView
             v.canScrollVertically(-1)
@@ -150,7 +150,7 @@ class MobileActivity : FragmentActivity() {
         nav.removeAllViews()
         navItems.forEach { (id, label, icon) ->
             val selected = id == tab
-            val color = if (selected) ContextCompat.getColor(this, R.color.accent) else Color.parseColor("#B0BEC5")
+            val color = if (selected) ThemeManager.accent else Color.parseColor("#B0BEC5")
             val tv = TextView(this).apply {
                 text = label
                 textSize = 12f
@@ -182,11 +182,15 @@ class MobileActivity : FragmentActivity() {
     private fun chooseSource() {
         val list = Repo.sources
         if (list.isEmpty()) { startActivity(Intent(this, SettingsActivity::class.java)); return }
-        val names = list.map { (if (it.id == Repo.activeSourceId) "● " else "") + it.name + " — " + it.typeLabel }
+        val shown = com.elarbi.omniiptv.data.Shown.sources().map { it.id }
+        val names = list.map { (if (it.id in shown) "● " else "") + it.name + " — " + it.typeLabel }
         AlertDialog.Builder(this).setTitle("Source à afficher")
-            .setItems((names + "＋ Ajouter une source…").toTypedArray()) { _, w ->
-                if (w == list.size) startActivity(Intent(this, SettingsActivity::class.java))
-                else { Repo.activeSourceId = list[w].id; chip = "Tout"; load() }
+            .setItems((names + "☰ Afficher plusieurs sources…" + "＋ Ajouter une source…").toTypedArray()) { _, w ->
+                when {
+                    w < list.size -> { com.elarbi.omniiptv.data.Shown.showOnly(list[w].id); chip = "Tout"; load() }
+                    w == list.size -> SourcePicker.pickSeveral(this) { chip = "Tout"; load() }
+                    else -> startActivity(Intent(this, SettingsActivity::class.java))
+                }
             }.show()
     }
 
@@ -207,8 +211,8 @@ class MobileActivity : FragmentActivity() {
     private fun load() {
         builtVersion = Repo.version
         val src = Repo.activeSource()
-        titleView.text = (src?.name ?: "Omni IPTV") + "  ▾"
-        val all = if (src != null) Edits.view(src.id) else emptyList()
+        titleView.text = (if (src == null) "Omni IPTV" else com.elarbi.omniiptv.data.Shown.title()) + "  ▾"
+        val all = com.elarbi.omniiptv.data.Shown.channels()
         content = when (tab) {
             "live" -> all.filter { !it.isVod }
             "movies" -> all.filter { it.isVod && !it.url.startsWith("xtseries:") }
@@ -239,7 +243,7 @@ class MobileActivity : FragmentActivity() {
         setPadding(Ui.dp(this@MobileActivity, 14), Ui.dp(this@MobileActivity, 7), Ui.dp(this@MobileActivity, 14), Ui.dp(this@MobileActivity, 7))
         background = GradientDrawable().apply {
             cornerRadius = Ui.dp(this@MobileActivity, 18).toFloat()
-            setColor(if (selected) ContextCompat.getColor(this@MobileActivity, R.color.accent) else Color.parseColor("#33FFFFFF"))
+            setColor(if (selected) ThemeManager.accent else Color.parseColor("#33FFFFFF"))
         }
         setOnClickListener { onClick() }
         layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
@@ -283,6 +287,11 @@ class MobileActivity : FragmentActivity() {
         }
         opts += (if (Library.isWatch(ch.key)) "Retirer de « À regarder »" else "Ajouter à « À regarder »") to { Library.toggleWatch(ch) }
         if (Library.resume.containsKey(ch.key)) opts += "Retirer de « Continuer »" to { Library.finish(ch) }
+        opts += "Ajouter un raccourci sur l'écran d'accueil" to {
+            if (!com.elarbi.omniiptv.home.Shortcuts.pin(this, ch)) {
+                Ui.toast(this, "Sur ce téléviseur, les favoris et films en cours apparaissent dans la rangée Omni IPTV de l'accueil.")
+            }
+        }
         if (Repo.sources.any { it.id == ch.sourceId }) {
             opts += "Masquer" to { Edits.update(ch.sourceId, ch.key) { it.hidden = true } }
             opts += "Gérer les chaînes…" to {

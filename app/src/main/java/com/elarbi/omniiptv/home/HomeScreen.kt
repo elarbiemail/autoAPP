@@ -81,7 +81,7 @@ object HomeScreen {
         var all = (resume.take(10) + fav + watch).distinctBy { it.key }
         if (all.size < 6) {
             val more = Repo.recents.map { Edits.apply(it) } +
-                (Repo.activeSource()?.let { Edits.view(it.id).filter { c -> !c.isVod } } ?: emptyList()).take(30)
+                com.elarbi.omniiptv.data.Shown.channels().filter { c -> !c.isVod }.take(30)
             all = (all + more).distinctBy { it.key }
         }
         return all.filter { !Prefs.isLocked(it) && !Prefs.isHiddenAdult(it) }.take(40)
@@ -132,7 +132,7 @@ object HomeScreen {
         try {
             cr.delete(TvContractCompat.buildPreviewProgramsUriForChannel(liveId), null, null)
             val pool = (Repo.favorites.values.map { Edits.apply(it) } + Repo.recents.map { Edits.apply(it) } +
-                (Repo.activeSource()?.let { Edits.view(it.id).take(400) } ?: emptyList()))
+                com.elarbi.omniiptv.data.Shown.channels().take(400))
                 .filter { !it.isVod && !Prefs.isLocked(it) }.distinctBy { it.key }
             pool.filter { Repo.nowNext(it).first != null }.take(40).forEachIndexed { i, ch ->
                 try { cr.insert(TvContractCompat.PreviewPrograms.CONTENT_URI, program(ctx, liveId, ch, 1000 - i).toContentValues()) } catch (_: Exception) {}
@@ -155,8 +155,11 @@ object HomeScreen {
                 .setIntentUri(deepLink(ch))
                 .setInternalProviderId(ch.key)
             if (ch.isVod) {
-                b.setType(TvContractCompat.WatchNextPrograms.TYPE_MOVIE)
-                    .setDescription(ch.group)
+                val episode = ch.key.contains("|E")
+                b.setType(if (episode) TvContractCompat.WatchNextPrograms.TYPE_TV_EPISODE else TvContractCompat.WatchNextPrograms.TYPE_MOVIE)
+                    .setTitle(if (episode) "${ch.group} — ${ch.name}" else ch.name)
+                    .setPosterArtAspectRatio(TvContractCompat.WatchNextPrograms.ASPECT_RATIO_2_3)
+                    .setDescription(if (episode) "Épisode en cours" else ch.group)
                     .setLastPlaybackPositionMillis(pos.toInt())
                     .setDurationMillis(dur.toInt())
             } else {

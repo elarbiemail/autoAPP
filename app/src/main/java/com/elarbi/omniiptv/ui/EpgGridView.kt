@@ -48,10 +48,10 @@ class EpgGridView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? =
     private var selRow = 0
     private var selTime = System.currentTimeMillis()
 
-    private val bg = Paint().apply { color = Color.parseColor("#0B1320") }
+    private val bg = Paint().apply { color = ThemeManager.background }
     private val cell = Paint().apply { color = Color.parseColor("#1B2A3E") }
     private val cellNow = Paint().apply { color = Color.parseColor("#24405F") }
-    private val cellSel = Paint().apply { color = Color.parseColor("#FF9F1C") }
+    private val cellSel = Paint().apply { color = ThemeManager.accent }
     private val colBg = Paint().apply { color = Color.parseColor("#122236") }
     private val nowLine = Paint().apply { color = Color.parseColor("#FF5252"); strokeWidth = 2 * d }
     private val text = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textSize = 15 * d }

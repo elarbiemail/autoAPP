@@ -26,6 +26,7 @@ class HomeSyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
         }
         try { HomeScreen.sync(applicationContext) } catch (_: Exception) {}
         try { TifSync.sync(applicationContext) } catch (_: Exception) {}
+        try { Shortcuts.update(applicationContext) } catch (_: Exception) {}
         return Result.success()
     }
 

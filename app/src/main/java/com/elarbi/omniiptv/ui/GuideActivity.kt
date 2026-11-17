@@ -43,7 +43,7 @@ class GuideActivity : FragmentActivity(), EpgGridView.Listener {
         root.addView(grid, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         setContentView(root)
         val src = Repo.activeSource()
-        all = if (src != null) Edits.view(src.id).filter { !it.isVod } else emptyList()
+        all = com.elarbi.omniiptv.data.Shown.channels().filter { !it.isVod }
         apply()
         grid.requestFocus()
     }
@@ -107,7 +107,7 @@ class GuideActivity : FragmentActivity(), EpgGridView.Listener {
 
     private fun play(ch: Channel, url: String?, title: String?) {
         val src = Repo.activeSource()
-        Repo.playContext = if (src != null && ch.sourceId == src.id) all.filter { it.group == ch.group } else listOf(ch)
+        Repo.playContext = all.filter { it.group == ch.group }.ifEmpty { listOf(ch) }
         val i = Intent(this, PlayerActivity::class.java).putExtra("key", ch.key)
         if (url != null) i.putExtra("url", url).putExtra("title", title)
         startActivity(i)

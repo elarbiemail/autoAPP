@@ -25,8 +25,7 @@ object TifSync {
     fun selection(): List<Channel> {
         val fav = Repo.favorites.values.filter { !it.isVod && !it.url.startsWith("tuner:") }.map { com.elarbi.omniiptv.data.Edits.apply(it) }
         if (fav.isNotEmpty()) return fav
-        val s = Repo.activeSource() ?: return emptyList()
-        return com.elarbi.omniiptv.data.Edits.view(s.id).filter { !it.isVod && !it.url.startsWith("tuner:") }.take(800)
+        return com.elarbi.omniiptv.data.Shown.channels().filter { !it.isVod && !it.url.startsWith("tuner:") }.take(800)
     }
 
     /** Renvoie le nombre de chaînes publiées. */

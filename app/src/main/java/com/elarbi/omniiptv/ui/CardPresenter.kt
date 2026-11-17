@@ -21,7 +21,7 @@ class CardPresenter(private val onLong: (Any) -> Unit) : Presenter() {
         card.isFocusableInTouchMode = true
         card.setMainImageDimensions(Ui.dp(ctx, 200), Ui.dp(ctx, 112))
         card.setMainImageScaleType(ImageView.ScaleType.FIT_CENTER)
-        card.setBackgroundColor(ContextCompat.getColor(ctx, R.color.brand))
+        card.setBackgroundColor(ThemeManager.brand)
         return ViewHolder(card)
     }
 
