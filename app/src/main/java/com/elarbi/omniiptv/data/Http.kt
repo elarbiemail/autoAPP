@@ -1,6 +1,8 @@
 package com.elarbi.omniiptv.data
 
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Request
 import org.json.JSONObject
 import java.io.File
@@ -38,6 +40,17 @@ object Http {
             throw IOException("HTTP $code")
         }
         return resp.body?.byteStream() ?: throw IOException("Réponse vide")
+    }
+
+    fun postJson(url: String, json: String, headers: Map<String, String> = emptyMap()): String {
+        val b = Request.Builder().url(url).post(json.toRequestBody("application/json".toMediaType()))
+        if (headers.keys.none { it.equals("User-Agent", true) }) b.header("User-Agent", DEFAULT_UA)
+        headers.forEach { (k, v) -> b.header(k, v) }
+        client.newCall(b.build()).execute().use { r ->
+            val body = r.body?.string().orEmpty()
+            if (!r.isSuccessful) throw IOException("HTTP ${r.code}")
+            return body
+        }
     }
 
     fun get(url: String, headers: Map<String, String> = emptyMap()): String =

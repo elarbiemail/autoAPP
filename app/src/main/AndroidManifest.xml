@@ -58,6 +58,10 @@
         <activity android:name=".ui.ChannelManagerActivity" />
         <activity android:name=".ui.EpgActivity" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".ui.SeriesActivity" />
+        <activity
+            android:name=".ui.YouTubeEmbedActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation"
+            android:hardwareAccelerated="true" />
         <activity android:name=".ui.FreeSearchActivity" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".ui.SearchActivity" />
         <activity

@@ -13,7 +13,7 @@
         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Chaînes YouTube Live"
             android:textColor="#FFFFFF" android:textSize="28sp" android:textStyle="bold" />
         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="4dp"
-            android:text="Collez le lien d'une chaîne (youtube.com/@pseudo) ou d'un direct (youtube.com/watch?v=…). Le direct en cours est lu dans Omni IPTV ; sinon l'application YouTube s'ouvre."
+            android:text="Collez le lien d'une chaîne (youtube.com/@pseudo) ou d'un direct (youtube.com/watch?v=…). Le direct en cours et les vidéos sont lus dans Omni IPTV (lecteur natif, ou lecteur YouTube intégré en secours)."
             android:textColor="@color/hint" android:textSize="15sp" />
         <EditText android:id="@+id/yt_name" style="@style/Field" android:hint="Nom affiché (ex. : 2M Live)" android:inputType="text" />
         <EditText android:id="@+id/yt_url" style="@style/Field" android:hint="Lien YouTube ou @pseudo" android:inputType="textUri" />

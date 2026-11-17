@@ -193,9 +193,12 @@ class PlayerActivity : FragmentActivity() {
                         tStatus.text = "Reprise à ${clock(pos)} — → Options > « Recommencer » pour revenir au début"
                     }
                 }
+            } catch (e: YouTube.EmbedRequired) {
+                openEmbed(ch, e.videoId)
             } catch (e: YouTube.NotLiveException) {
-                showInfo(ch, "Pas de direct YouTube en cours : ouverture de l'application YouTube…")
-                if (YouTube.openInApp(this@PlayerActivity, ch.url)) player.stop()
+                player.stop()
+                showInfo(ch, "Pas de direct en cours sur cette chaîne YouTube. Changez de chaîne avec ↑/↓.")
+                handler.removeCallbacks(hideInfo)
             } catch (e: Exception) {
                 tStatus.text = "Erreur : ${e.message}"
             }
@@ -225,9 +228,37 @@ class PlayerActivity : FragmentActivity() {
                 PlayerFactory.play(this@PlayerActivity, player, alt, StreamResolver.userAgent(ch), ch.referer, forceHls = true)
                 return
             }
+            if (YouTube.isYouTube(ch.url)) {
+                YouTube.videoId(currentUrl)?.let { openEmbed(ch, it); return }
+                lifecycleScope.launch {
+                    try {
+                        val st = kotlinx.coroutines.withContext(Dispatchers.IO) { YouTube.resolveStream(ch.url) }
+                        openEmbed(ch, st.videoId)
+                    } catch (_: Exception) {
+                        showInfo(ch, "Lecture YouTube impossible. Changez de chaîne avec ↑/↓.")
+                    }
+                }
+                return
+            }
             showInfo(ch, "Lecture impossible (${error.errorCodeName}). Changez de chaîne avec ↑/↓.")
             handler.removeCallbacks(hideInfo)
         }
+    }
+
+    /** Lecteur YouTube intégré à l'application (sans passer par l'application YouTube). */
+    private val embedLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+    ) { r ->
+        val delta = r.data?.getIntExtra("zap", 0) ?: 0
+        if (delta != 0) zap(delta)
+    }
+
+    private fun openEmbed(ch: Channel, videoId: String) {
+        player.stop()
+        tStatus.text = "Lecture dans le lecteur YouTube intégré…"
+        embedLauncher.launch(
+            Intent(this, YouTubeEmbedActivity::class.java).putExtra("videoId", videoId).putExtra("title", ch.name)
+        )
     }
 
     private val analytics = object : AnalyticsListener {

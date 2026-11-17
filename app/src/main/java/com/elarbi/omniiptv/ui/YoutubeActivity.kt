@@ -60,10 +60,11 @@ class YoutubeActivity : FragmentActivity() {
         status.text = "Recherche du direct…"
         lifecycleScope.launch {
             status.text = try {
-                withContext(Dispatchers.IO) { YouTube.resolveHls(url) }
-                "✅ Direct en cours : lisible dans Omni IPTV."
+                val st = withContext(Dispatchers.IO) { YouTube.resolveStream(url) }
+                if (st.url != null) "✅ ${if (st.isLive) "Direct en cours" else "Vidéo"} lisible dans le lecteur Omni IPTV."
+                else "✅ Lisible avec le lecteur YouTube intégré à Omni IPTV."
             } catch (e: YouTube.NotLiveException) {
-                "⚠ Pas de direct en ce moment (l'application YouTube sera ouverte à la place)."
+                "⚠ Pas de direct en ce moment sur cette chaîne."
             } catch (e: Exception) {
                 "❌ Erreur : ${e.message}"
             }
@@ -81,7 +82,7 @@ class YoutubeActivity : FragmentActivity() {
 
     private fun options(ch: Channel, all: List<Channel>) {
         AlertDialog.Builder(this).setTitle(ch.name)
-            .setItems(arrayOf("Regarder", "Ouvrir dans l'application YouTube", "Supprimer")) { _, w ->
+            .setItems(arrayOf("Regarder", "Ouvrir dans l'application YouTube (facultatif)", "Supprimer")) { _, w ->
                 when (w) {
                     0 -> {
                         Repo.playContext = all
