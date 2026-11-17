@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="#22FFFFFF"
+    android:orientation="vertical"
+    android:padding="8dp">
+    <FrameLayout android:layout_width="match_parent" android:layout_height="100dp">
+        <ImageView android:id="@+id/tile_img" android:layout_width="match_parent" android:layout_height="match_parent"
+            android:scaleType="fitCenter" />
+        <TextView android:id="@+id/tile_badge" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_gravity="top|end" android:background="@color/accent" android:paddingStart="4dp"
+            android:paddingEnd="4dp" android:textColor="#000000" android:textSize="12sp" />
+        <ProgressBar android:id="@+id/tile_progress" style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent" android:layout_height="4dp" android:layout_gravity="bottom"
+            android:max="100" android:progressTint="@color/accent" />
+    </FrameLayout>
+    <TextView android:id="@+id/tile_name" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="4dp" android:ellipsize="end" android:maxLines="2" android:textColor="#FFFFFF"
+        android:textSize="14sp" android:textStyle="bold" />
+    <TextView android:id="@+id/tile_sub" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:ellipsize="end" android:maxLines="1" android:textColor="@color/hint" android:textSize="12sp" />
+</LinearLayout>

@@ -38,3 +38,22 @@ object Ui {
             ).apply { setMargins(0, dp(ctx, 5), dp(ctx, 10), dp(ctx, 5)) }
         }
 }
+
+/** Demande du code parental ; appelle onOk si le code est bon. */
+fun Ui.askPin(ctx: android.content.Context, onOk: () -> Unit) {
+    val pin = com.elarbi.omniiptv.data.Prefs.pin
+    if (pin.isBlank()) { onOk(); return }
+    val e = android.widget.EditText(ctx).apply {
+        inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
+        setTextColor(android.graphics.Color.WHITE)
+        hint = "Code à 4 chiffres"
+    }
+    android.app.AlertDialog.Builder(ctx).setTitle("Contrôle parental").setView(e)
+        .setPositiveButton("Déverrouiller") { _, _ ->
+            if (e.text.toString() == pin) {
+                com.elarbi.omniiptv.data.Prefs.unlocked = true
+                onOk()
+            } else toast(ctx, "Code incorrect")
+        }
+        .setNegativeButton("Annuler", null).show()
+}

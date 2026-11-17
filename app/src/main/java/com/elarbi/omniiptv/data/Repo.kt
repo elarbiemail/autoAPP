@@ -188,7 +188,7 @@ object Repo {
         val chans = channels(s.id).filter { !it.isVod }.map { Edits.apply(it) }
         if (chans.isEmpty()) return@withContext
         val now = System.currentTimeMillis()
-        val from = now - 2 * 3600_000L
+        val from = now - 24 * 3600_000L
         val to = now + 48 * 3600_000L
         val merged = HashMap<String, List<Programme>>()
         val icons = HashMap<String, String>()
@@ -313,6 +313,14 @@ object Repo {
             val l = m[k]?.filter { it.end > now }
             if (!l.isNullOrEmpty()) return l
         }
+        return emptyList()
+    }
+
+    /** Tous les programmes connus (passés compris), pour la grille du guide et le replay. */
+    fun allProgrammes(ch: Channel): List<Programme> {
+        synchronized(this) { shortCache[ch.key] }?.takeIf { it.isNotEmpty() }?.let { return it }
+        val m = epg(ch.sourceId)
+        for (k in epgKeys(ch)) m[k]?.takeIf { it.isNotEmpty() }?.let { return it }
         return emptyList()
     }
 

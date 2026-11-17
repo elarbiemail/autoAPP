@@ -44,7 +44,7 @@ object Repos {
     /** Accepte une URL complète, « utilisateur/dépôt » (GitHub) ou « utilisateur/dépôt/fichier.json ». */
     fun normalize(input: String): String {
         val t = input.trim()
-        if (t == BUILTIN || t.startsWith("http://") || t.startsWith("https://")) return t
+        if (t == BUILTIN || t.startsWith("http://") || t.startsWith("https://") || t.startsWith("/")) return t
         val parts = t.trim('/').split('/')
         return when {
             parts.size == 2 -> "https://raw.githubusercontent.com/${parts[0]}/${parts[1]}/main/omni-repo.json"
@@ -115,6 +115,11 @@ object Repos {
                     e.str("mac"), e.str("epg"), e.str("group"), e.str("description")
                 )
             )
+        }
+        // Guides TV inclus (sauvegardes) : ajoutés aux guides supplémentaires.
+        o.optJSONArray("epgGuides")?.let { g ->
+            val extra = (0 until g.length()).map { g.optString(it) }.filter { it.startsWith("http") }
+            if (extra.isNotEmpty()) Repo.setGlobalEpgUrls(Repo.globalEpgUrls() + extra)
         }
         return Repository(
             url, o.str("name").ifBlank { url }, o.str("description"), o.str("author"), items

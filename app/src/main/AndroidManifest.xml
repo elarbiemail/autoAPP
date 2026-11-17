@@ -5,6 +5,7 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="com.android.providers.tv.permission.READ_EPG_DATA" />
     <uses-permission android:name="com.android.providers.tv.permission.WRITE_EPG_DATA" />
 
@@ -44,7 +45,9 @@
             android:name=".ui.PlayerActivity"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation"
             android:exported="true"
-            android:launchMode="singleTop">
+            android:launchMode="singleTop"
+            android:resizeableActivity="true"
+            android:supportsPictureInPicture="true">
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -58,6 +61,10 @@
         <activity android:name=".ui.ChannelManagerActivity" />
         <activity android:name=".ui.EpgActivity" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".ui.SeriesActivity" />
+        <activity android:name=".ui.BrowseActivity" />
+        <activity android:name=".ui.GuideActivity" />
+        <activity android:name=".ui.MultiViewActivity" android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation" />
+        <activity android:name=".ui.SettingsActivity" />
         <activity
             android:name=".ui.YouTubeEmbedActivity"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation"
@@ -90,6 +97,7 @@
             <meta-data android:name="android.media.tv.input" android:resource="@xml/tvinputservice" />
         </service>
 
+        <receiver android:name=".data.ReminderReceiver" android:exported="false" />
         <receiver android:name=".home.InitReceiver" android:exported="true">
             <intent-filter>
                 <action android:name="android.media.tv.action.INITIALIZE_PROGRAMS" />

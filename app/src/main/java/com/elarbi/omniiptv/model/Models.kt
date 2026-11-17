@@ -47,7 +47,9 @@ data class Channel(
     val epgId: String = "",
     val userAgent: String = "",
     val referer: String = "",
-    val isVod: Boolean = false
+    val isVod: Boolean = false,
+    /** Jours de replay disponibles (Xtream tv_archive), 0 si aucun. */
+    val archive: Int = 0
 ) {
     /** Clé utilisée pour retrouver les programmes dans le guide TV. */
     val epgKey: String
@@ -56,11 +58,13 @@ data class Channel(
     fun toJson(): JSONObject = JSONObject()
         .put("k", key).put("s", sourceId).put("n", name).put("u", url).put("l", logo)
         .put("g", group).put("e", epgId).put("a", userAgent).put("r", referer).put("v", isVod)
+        .apply { if (archive > 0) put("c", archive) }
 
     companion object {
         fun fromJson(o: JSONObject) = Channel(
             o.getString("k"), o.optString("s"), o.optString("n"), o.optString("u"), o.optString("l"),
-            o.optString("g"), o.optString("e"), o.optString("a"), o.optString("r"), o.optBoolean("v")
+            o.optString("g"), o.optString("e"), o.optString("a"), o.optString("r"), o.optBoolean("v"),
+            o.optInt("c")
         )
     }
 }

@@ -24,6 +24,13 @@ class XtreamClient(private val s: Source) {
 
     fun epgUrl() = "$base/xmltv.php?username=$u&password=$p"
 
+    /** Adresse de replay (catch-up) d'un programme passé. */
+    fun timeshiftUrl(streamId: String, start: Long, end: Long): String {
+        val f = java.text.SimpleDateFormat("yyyy-MM-dd:HH-mm", java.util.Locale.US)
+        val minutes = ((end - start) / 60_000L).coerceAtLeast(1)
+        return "$base/timeshift/${s.username}/${s.password}/$minutes/${f.format(java.util.Date(start))}/$streamId.ts"
+    }
+
     fun channels(): List<Channel> {
         val auth = JSONObject(Http.get(api(null), headers()))
         val ui = auth.optJSONObject("user_info")
@@ -46,7 +53,8 @@ class XtreamClient(private val s: Source) {
                     key = "${s.id}|L$id", sourceId = s.id, name = o.str("name"),
                     url = "$base/live/${s.username}/${s.password}/$id.$ext",
                     logo = o.str("stream_icon"), group = liveCats[o.str("category_id")] ?: "Divers",
-                    epgId = o.str("epg_channel_id"), userAgent = s.userAgent
+                    epgId = o.str("epg_channel_id"), userAgent = s.userAgent,
+                    archive = if (o.str("tv_archive") == "1") (o.str("tv_archive_duration").toIntOrNull() ?: 1) else 0
                 )
             )
         }

@@ -117,7 +117,7 @@ object Edits {
         rows.forEach { (c, _, i) -> firstSeen.putIfAbsent(c.group, i) }
         val groupIdx = HashMap<String, Int>()
         se.groupOrder.forEachIndexed { i, g -> groupIdx[g] = i }
-        val visible = if (includeHidden) rows else rows.filter { (c, e, _) -> e?.hidden != true && c.group !in se.hiddenGroups }
+        val visible = if (includeHidden) rows else rows.filter { (c, e, _) -> e?.hidden != true && c.group !in se.hiddenGroups && !Prefs.isHiddenAdult(c) }
         val sorted = visible.sortedWith(
             compareBy<Triple<Channel, ChannelEdit?, Int>>(
                 { groupIdx[it.first.group] ?: (1_000_000 + (firstSeen[it.first.group] ?: 0)) },

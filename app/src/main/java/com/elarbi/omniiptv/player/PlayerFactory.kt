@@ -24,7 +24,11 @@ object PlayerFactory {
         val renderers = DefaultRenderersFactory(ctx)
             .setEnableDecoderFallback(true)
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
-        val load = DefaultLoadControl.Builder().setBufferDurationsMs(15_000, 50_000, 2_500, 5_000).build()
+        val load = when (com.elarbi.omniiptv.data.Prefs.buffer) {
+            "low" -> DefaultLoadControl.Builder().setBufferDurationsMs(5_000, 20_000, 1_000, 2_000).build()
+            "high" -> DefaultLoadControl.Builder().setBufferDurationsMs(30_000, 120_000, 3_000, 6_000).build()
+            else -> DefaultLoadControl.Builder().setBufferDurationsMs(15_000, 50_000, 2_500, 5_000).build()
+        }
         return ExoPlayer.Builder(ctx, renderers).setLoadControl(load).build()
     }
 

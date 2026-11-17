@@ -31,6 +31,7 @@ class MainFragment : BrowseSupportFragment() {
         const val A_M3U = 1; const val A_XTREAM = 2; const val A_STALKER = 3; const val A_SOURCES = 4
         const val A_FREE = 5; const val A_SEARCH = 6; const val A_REFRESH = 7; const val A_HOME = 8
         const val A_HOME_LIVE = 9; const val A_LIVE_TAB = 10; const val A_ABOUT = 11; const val A_YT = 12; const val A_REPOS = 13; const val A_MANAGER = 14; const val A_EPG = 15
+        const val A_LIST = 16; const val A_GRID = 17; const val A_GUIDE = 18; const val A_MULTI = 19; const val A_SETTINGS = 20
     }
 
     private val rowsAdapter = ArrayObjectAdapter(ListRowPresenter())
@@ -60,6 +61,11 @@ class MainFragment : BrowseSupportFragment() {
     }
 
     private fun actions(): List<ActionItem> = listOf(
+        ActionItem(A_GUIDE, "Guide TV (grille)", "Programmes, replay, rappels", R.drawable.ic_tv),
+        ActionItem(A_LIST, "Vue liste", "Direct, films, séries…", R.drawable.ic_list),
+        ActionItem(A_GRID, "Vue grille", "Vignettes et affiches", R.drawable.ic_home),
+        ActionItem(A_MULTI, "Multi-écran", "4 chaînes à la fois", R.drawable.ic_tv),
+        ActionItem(A_SETTINGS, "Réglages", "Démarrage, lecteur, parental, sauvegarde", R.drawable.ic_info),
         ActionItem(A_M3U, "Ajouter une liste M3U", "Lien m3u / m3u8", R.drawable.ic_add),
         ActionItem(A_XTREAM, "Ajouter Xtream Codes", "Serveur + identifiants", R.drawable.ic_add),
         ActionItem(A_STALKER, "Ajouter un portail MAC", "Stalker / MAG", R.drawable.ic_add),
@@ -151,6 +157,11 @@ class MainFragment : BrowseSupportFragment() {
             A_M3U -> addSource(SourceType.M3U)
             A_XTREAM -> addSource(SourceType.XTREAM)
             A_STALKER -> addSource(SourceType.STALKER)
+            A_GUIDE -> startActivity(Intent(ctx, GuideActivity::class.java))
+            A_LIST -> startActivity(Intent(ctx, BrowseActivity::class.java).putExtra("mode", "list"))
+            A_GRID -> startActivity(Intent(ctx, BrowseActivity::class.java).putExtra("mode", "grid"))
+            A_MULTI -> startActivity(Intent(ctx, MultiViewActivity::class.java))
+            A_SETTINGS -> startActivity(Intent(ctx, SettingsActivity::class.java))
             A_MANAGER -> startActivity(Intent(ctx, ChannelManagerActivity::class.java))
             A_EPG -> startActivity(Intent(ctx, EpgActivity::class.java))
             A_REPOS -> startActivity(Intent(ctx, ReposActivity::class.java))

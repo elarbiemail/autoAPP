@@ -1,6 +1,13 @@
 package com.elarbi.omniiptv.ui
 
+import android.annotation.SuppressLint
 import android.app.AlertDialog
+import android.app.PictureInPictureParams
+import android.content.pm.PackageManager
+import android.media.AudioManager
+import android.util.Rational
+import android.view.GestureDetector
+import android.view.MotionEvent
 import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
@@ -27,6 +34,7 @@ import androidx.media3.ui.PlayerView
 import com.bumptech.glide.Glide
 import com.elarbi.omniiptv.R
 import com.elarbi.omniiptv.data.Library
+import com.elarbi.omniiptv.data.Prefs
 import com.elarbi.omniiptv.data.Repo
 import com.elarbi.omniiptv.data.StreamResolver
 import com.elarbi.omniiptv.data.YouTube
@@ -77,6 +85,17 @@ class PlayerActivity : FragmentActivity() {
     private var showStats = false
     private var resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
 
+    // Reconnexion, minuterie, replay
+    private var reconnects = 0
+    private var sleepAt = 0L
+    private val sleepRunnable = Runnable {
+        player.pause()
+        Ui.toast(this, "Minuterie de mise en veille : lecture arrêtée.")
+        finish()
+    }
+    private var overrideUrl: String? = null
+    private var overrideTitle: String? = null
+
     // Saisie numérique
     private val digits = StringBuilder()
     private val applyNumber = Runnable { jumpToNumber() }
@@ -117,6 +136,21 @@ class PlayerActivity : FragmentActivity() {
         player.addListener(listener)
         player.addAnalyticsListener(analytics)
 
+        resizeMode = when (Prefs.aspect) {
+            1 -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+            2 -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+            else -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+        }
+        playerView.resizeMode = resizeMode
+        setupGestures()
+        addOnPictureInPictureModeChangedListener { info ->
+            if (info.isInPictureInPictureMode) {
+                this.info.visibility = View.GONE
+                side.visibility = View.GONE
+                statsView.visibility = View.GONE
+            }
+        }
+
         rowAdapter = ChannelRowAdapter(this, emptyList())
         sideList.adapter = rowAdapter
         sideList.setOnItemClickListener { _, _, pos, _ ->
@@ -135,6 +169,8 @@ class PlayerActivity : FragmentActivity() {
 
     private fun start(i: Intent) {
         val key = i.getStringExtra("key") ?: i.data?.getQueryParameter("key")
+        overrideUrl = i.getStringExtra("url")
+        overrideTitle = i.getStringExtra("title")
         val ch = key?.let { Repo.findChannel(it) }
         if (ch == null) {
             Ui.toast(this, "Chaîne introuvable. Actualisez la source.")
@@ -163,6 +199,12 @@ class PlayerActivity : FragmentActivity() {
 
     private fun playCurrent() {
         val ch = list.getOrNull(index) ?: return
+        if (Prefs.isLocked(ch)) {
+            player.stop()
+            showInfo(ch, "Chaîne verrouillée (contrôle parental).")
+            Ui.askPin(this) { playCurrent() }
+            return
+        }
         retried = false
         currentUrl = ""
         droppedFrames = 0
@@ -180,7 +222,10 @@ class PlayerActivity : FragmentActivity() {
         job?.cancel()
         job = lifecycleScope.launch {
             try {
-                val url = StreamResolver.resolve(ch)
+                val replay = overrideUrl
+                overrideUrl = null
+                val url = replay ?: StreamResolver.resolve(ch)
+                if (replay != null) tStatus.text = "Replay : ${overrideTitle.orEmpty()}"
                 currentUrl = url
                 PlayerFactory.play(
                     this@PlayerActivity, player, url, StreamResolver.userAgent(ch), ch.referer,
@@ -208,7 +253,7 @@ class PlayerActivity : FragmentActivity() {
     private val listener = object : Player.Listener {
         override fun onPlaybackStateChanged(state: Int) {
             when (state) {
-                Player.STATE_READY -> { if (tStatus.text.startsWith("Chargement") || tStatus.text.startsWith("Connexion")) tStatus.text = ""; scheduleHide() }
+                Player.STATE_READY -> { reconnects = 0; if (tStatus.text.startsWith("Chargement") || tStatus.text.startsWith("Connexion")) tStatus.text = ""; scheduleHide() }
                 Player.STATE_BUFFERING -> tStatus.text = "Chargement…"
                 Player.STATE_ENDED -> onEnded()
                 else -> {}
@@ -238,6 +283,17 @@ class PlayerActivity : FragmentActivity() {
                         showInfo(ch, "Lecture YouTube impossible. Changez de chaîne avec ↑/↓.")
                     }
                 }
+                return
+            }
+            if (Prefs.autoReconnect && reconnects < 5 && currentUrl.isNotBlank()) {
+                reconnects++
+                showInfo(ch, "Coupure du flux : reconnexion automatique ($reconnects/5)…")
+                val url = currentUrl
+                handler.postDelayed({
+                    if (list.getOrNull(index)?.key == ch.key) {
+                        PlayerFactory.play(this@PlayerActivity, player, url, StreamResolver.userAgent(ch), ch.referer, forceHls = url.contains(".m3u8"))
+                    }
+                }, 3000L * reconnects)
                 return
             }
             showInfo(ch, "Lecture impossible (${error.errorCodeName}). Changez de chaîne avec ↑/↓.")
@@ -289,7 +345,8 @@ class PlayerActivity : FragmentActivity() {
     private fun showInfo(ch: Channel, status: String?) {
         tTitle.text = "${index + 1}. ${ch.name}"
         val marks = (if (Repo.isFavorite(ch.key)) "★ " else "") + (if (Library.isWatch(ch.key)) "◉ À regarder  " else "")
-        tSub.text = marks + ch.group
+        val clock = if (Prefs.showClock) "${Ui.hm(System.currentTimeMillis())}  •  " else ""
+        tSub.text = clock + marks + ch.group
         if (ch.isVod) {
             tNow.text = Library.progress(ch.key)?.let { "Déjà vu : $it %" } ?: ""
             tNext.text = list.getOrNull(index + 1)?.takeIf { it.isVod }?.let { "Suivant : ${it.name}" } ?: ""
@@ -399,6 +456,11 @@ class PlayerActivity : FragmentActivity() {
         if (ch.isVod) items += "Recommencer depuis le début" to { Library.restart(ch.key); player.seekTo(0) }
         if (previousIndex in list.indices) items += "Chaîne précédente : ${list[previousIndex].name}" to { goTo(previousIndex) }
         items += "Liste des chaînes" to { openSide() }
+        val left = if (sleepAt > System.currentTimeMillis()) " (reste ${(sleepAt - System.currentTimeMillis()) / 60000 + 1} min)" else ""
+        items += "Minuterie de mise en veille$left" to { sleepMenu() }
+        if (packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) {
+            items += "Image dans l'image" to { enterPip() }
+        }
         AlertDialog.Builder(this)
             .setTitle(ch.name)
             .setItems(items.map { it.first }.toTypedArray()) { _, w -> items[w].second() }
@@ -453,6 +515,119 @@ class PlayerActivity : FragmentActivity() {
             .show()
     }
 
+    private fun sleepMenu() {
+        val choices = listOf(0, 15, 30, 45, 60, 90, 120)
+        AlertDialog.Builder(this).setTitle("Arrêter la lecture dans…")
+            .setItems(choices.map { if (it == 0) "Désactiver" else "$it minutes" }.toTypedArray()) { _, w ->
+                handler.removeCallbacks(sleepRunnable)
+                val m = choices[w]
+                if (m == 0) { sleepAt = 0; Ui.toast(this, "Minuterie désactivée") }
+                else {
+                    sleepAt = System.currentTimeMillis() + m * 60_000L
+                    handler.postDelayed(sleepRunnable, m * 60_000L)
+                    Ui.toast(this, "Arrêt automatique dans $m minutes")
+                }
+            }.show()
+    }
+
+    private fun enterPip() {
+        try {
+            enterPictureInPictureMode(PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).build())
+        } catch (e: Exception) {
+            Ui.toast(this, "Image dans l'image non disponible sur cet appareil.")
+        }
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        // Sur téléphone/tablette : passage automatique en image dans l'image en quittant pendant la lecture.
+        if (!packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK) &&
+            packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE) && player.isPlaying
+        ) enterPip()
+    }
+
+    // ---------------- Écrans tactiles ----------------
+    private lateinit var audio: AudioManager
+    private var gestureValue = -1f
+
+    @SuppressLint("ClickableViewAccessibility")
+    private fun setupGestures() {
+        audio = getSystemService(AUDIO_SERVICE) as AudioManager
+        val minFling = Ui.dp(this, 90)
+        val detector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(e: MotionEvent): Boolean { gestureValue = -1f; return true }
+
+            override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+                val ch = list.getOrNull(index) ?: return false
+                if (ch.isVod) return false
+                if (info.visibility == View.VISIBLE) info.visibility = View.GONE else showInfo(ch, null)
+                return true
+            }
+
+            override fun onDoubleTap(e: MotionEvent): Boolean { options(); return true }
+
+            override fun onLongPress(e: MotionEvent) { openSide() }
+
+            override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
+                val start = e1 ?: return false
+                val dx = e2.x - start.x
+                val dy = e2.y - start.y
+                val ch = list.getOrNull(index) ?: return false
+                if (Math.abs(dx) > Math.abs(dy) * 1.5f && Math.abs(dx) > minFling) {
+                    if (ch.isVod) {
+                        // Film : glisser = avancer / reculer de 30 s
+                        player.seekTo((player.currentPosition + if (dx < 0) 30_000 else -30_000).coerceAtLeast(0))
+                        showGestureText(if (dx < 0) "⏩ +30 s" else "⏪ −30 s")
+                    } else {
+                        // Direct : glisser vers la gauche = chaîne suivante, vers la droite = précédente
+                        zap(if (dx < 0) 1 else -1)
+                    }
+                    return true
+                }
+                return false
+            }
+
+            override fun onScroll(e1: MotionEvent?, e2: MotionEvent, distanceX: Float, distanceY: Float): Boolean {
+                val start = e1 ?: return false
+                if (Math.abs(e2.y - start.y) < Math.abs(e2.x - start.x)) return false
+                val h = playerView.height.coerceAtLeast(1).toFloat()
+                val delta = distanceY / h * 1.5f
+                if (start.x < playerView.width / 2f) {
+                    // Moitié gauche : luminosité
+                    val lp = window.attributes
+                    if (gestureValue < 0) gestureValue = if (lp.screenBrightness < 0) 0.5f else lp.screenBrightness
+                    gestureValue = (gestureValue + delta).coerceIn(0.02f, 1f)
+                    lp.screenBrightness = gestureValue
+                    window.attributes = lp
+                    showGestureText("☀ ${(gestureValue * 100).toInt()} %")
+                } else {
+                    // Moitié droite : volume
+                    val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).toFloat()
+                    if (gestureValue < 0) gestureValue = audio.getStreamVolume(AudioManager.STREAM_MUSIC) / max
+                    gestureValue = (gestureValue + delta).coerceIn(0f, 1f)
+                    audio.setStreamVolume(AudioManager.STREAM_MUSIC, (gestureValue * max).toInt(), 0)
+                    showGestureText("🔊 ${(gestureValue * 100).toInt()} %")
+                }
+                return true
+            }
+        })
+        playerView.setOnTouchListener { v, e ->
+            val handled = detector.onTouchEvent(e)
+            val vod = list.getOrNull(index)?.isVod == true
+            if (vod && !handled) v.onTouchEvent(e)
+            true
+        }
+    }
+
+    private val hideGesture = Runnable { numberView.visibility = View.GONE }
+
+    private fun showGestureText(t: String) {
+        numberView.text = t
+        numberView.visibility = View.VISIBLE
+        handler.removeCallbacks(hideGesture)
+        handler.postDelayed(hideGesture, 1200)
+    }
+
     private fun aspectMenu() {
         val modes = listOf(
             "Adapter (sans déformation)" to AspectRatioFrameLayout.RESIZE_MODE_FIT,
@@ -463,6 +638,7 @@ class PlayerActivity : FragmentActivity() {
             .setItems(modes.map { (if (it.second == resizeMode) "● " else "") + it.first }.toTypedArray()) { _, w ->
                 resizeMode = modes[w].second
                 playerView.resizeMode = resizeMode
+                Prefs.aspect = w
             }.show()
     }
 
@@ -604,6 +780,7 @@ class PlayerActivity : FragmentActivity() {
         saveProgress(true)
         super.onStop()
         player.pause()
+        if (isInPictureInPictureMode) finish()
     }
 
     override fun onRestart() {
