@@ -42,6 +42,8 @@
         <item name="android:clickable">true</item>
         <item name="android:focusable">true</item>
     </style>
+    <style name="Bg" />
+    <style name="Accent" />
     <style name="Bg.Night">
         <item name="omniBg">#0B1320</item>
         <item name="omniBrand">#123A5A</item>
