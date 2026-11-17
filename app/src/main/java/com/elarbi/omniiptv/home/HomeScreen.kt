@@ -104,7 +104,7 @@ object HomeScreen {
         try {
             cr.delete(TvContractCompat.buildPreviewProgramsUriForChannel(liveId), null, null)
             val pool = (Repo.favorites.values + Repo.recents +
-                (Repo.activeSource()?.let { Repo.channels(it.id).take(400) } ?: emptyList()))
+                (Repo.activeSource()?.let { com.elarbi.omniiptv.data.Edits.view(it.id).take(400) } ?: emptyList()))
                 .filter { !it.isVod }.distinctBy { it.key }
             pool.mapNotNull { ch -> Repo.nowNext(ch).first?.let { ch to it } }.take(40).forEach { (ch, prog) ->
                 val p = PreviewProgram.Builder()
@@ -125,9 +125,35 @@ object HomeScreen {
         }
     }
 
-    /** Ajoute la chaîne à « Continuer à regarder ». */
-    fun addWatchNext(ctx: Context, ch: Channel) {
-        if (ch.isVod) return
+    /** Ajoute la chaîne (ou le film / l'épisode avec sa progression) à « Continuer à regarder ». */
+    fun addWatchNext(ctx: Context, ch: Channel, pos: Long = 0L, dur: Long = 0L) {
+        if (ch.isVod && dur <= 0L) return
+        try {
+            removeWatchNext(ctx, ch.key)
+            val b = WatchNextProgram.Builder()
+                .setWatchNextType(TvContractCompat.WatchNextPrograms.WATCH_NEXT_TYPE_CONTINUE)
+                .setLastEngagementTimeUtcMillis(System.currentTimeMillis())
+                .setTitle(ch.name)
+                .setPosterArtUri(poster(ctx, ch))
+                .setPosterArtAspectRatio(TvContractCompat.WatchNextPrograms.ASPECT_RATIO_16_9)
+                .setIntentUri(deepLink(ch))
+                .setInternalProviderId(ch.key)
+            if (ch.isVod) {
+                b.setType(TvContractCompat.WatchNextPrograms.TYPE_MOVIE)
+                    .setDescription(ch.group)
+                    .setLastPlaybackPositionMillis(pos.toInt())
+                    .setDurationMillis(dur.toInt())
+            } else {
+                b.setType(TvContractCompat.WatchNextPrograms.TYPE_CHANNEL)
+                    .setDescription(Repo.nowNext(ch).first?.title ?: ch.group)
+                    .setLive(true)
+            }
+            ctx.contentResolver.insert(TvContractCompat.WatchNextPrograms.CONTENT_URI, b.build().toContentValues())
+        } catch (_: Exception) {
+        }
+    }
+
+    fun removeWatchNext(ctx: Context, key: String) {
         try {
             val cr = ctx.contentResolver
             cr.query(
@@ -135,24 +161,9 @@ object HomeScreen {
                 arrayOf(BaseColumns._ID, "internal_provider_id"), null, null, null
             )?.use { c ->
                 while (c.moveToNext()) {
-                    if (c.getString(1) == ch.key) {
-                        cr.delete(TvContractCompat.buildWatchNextProgramUri(c.getLong(0)), null, null)
-                    }
+                    if (c.getString(1) == key) cr.delete(TvContractCompat.buildWatchNextProgramUri(c.getLong(0)), null, null)
                 }
             }
-            val w = WatchNextProgram.Builder()
-                .setType(TvContractCompat.WatchNextPrograms.TYPE_CHANNEL)
-                .setWatchNextType(TvContractCompat.WatchNextPrograms.WATCH_NEXT_TYPE_CONTINUE)
-                .setLastEngagementTimeUtcMillis(System.currentTimeMillis())
-                .setTitle(ch.name)
-                .setDescription(Repo.nowNext(ch).first?.title ?: ch.group)
-                .setPosterArtUri(poster(ctx, ch))
-                .setPosterArtAspectRatio(TvContractCompat.WatchNextPrograms.ASPECT_RATIO_16_9)
-                .setIntentUri(deepLink(ch))
-                .setInternalProviderId(ch.key)
-                .setLive(true)
-                .build()
-            cr.insert(TvContractCompat.WatchNextPrograms.CONTENT_URI, w.toContentValues())
         } catch (_: Exception) {
         }
     }

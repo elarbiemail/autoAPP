@@ -51,6 +51,7 @@ object Repo {
         readArray("recents.json")?.let { a ->
             for (i in 0 until a.length()) recents.add(Channel.fromJson(a.getJSONObject(i)))
         }
+        Library.init()
     }
 
     private fun file(name: String) = File(app.filesDir, name)
@@ -117,6 +118,9 @@ object Repo {
         file("ch_$id.json").delete()
         file("epg_$id.json").delete()
         file("free_$id.m3u").delete()
+        file("epgicons_$id.json").delete()
+        file("epgindex_$id.json").delete()
+        file("edits_$id.json").delete()
         saveSources()
         bump()
     }
@@ -166,29 +170,117 @@ object Repo {
         list.size
     }
 
+    // ---------- Guides TV ----------
+    /** Guides XMLTV ajoutés par l'utilisateur, utilisés pour toutes les sources. */
+    fun globalEpgUrls(): List<String> =
+        prefs.getString("global_epg", "").orEmpty().split('\n').map { it.trim() }.filter { it.isNotBlank() }
+
+    fun setGlobalEpgUrls(list: List<String>) {
+        prefs.edit().putString("global_epg", list.distinct().joinToString("\n")).apply()
+        bump()
+    }
+
+    fun autoEpgUrl(sourceId: String): String = prefs.getString("autoepg_$sourceId", "").orEmpty()
+
+    fun epgStat(sourceId: String): String = prefs.getString("epgstat_$sourceId", "").orEmpty()
+
     suspend fun refreshEpg(s: Source): Unit = withContext(Dispatchers.IO) {
-        val chans = channels(s.id).filter { !it.isVod }
+        val chans = channels(s.id).filter { !it.isVod }.map { Edits.apply(it) }
         if (chans.isEmpty()) return@withContext
         val now = System.currentTimeMillis()
-        val map: Map<String, List<Programme>> = if (s.type == SourceType.STALKER) {
-            stalker(s.id).epg()
-        } else {
-            val url = s.epgUrl.ifBlank { prefs.getString("autoepg_${s.id}", "").orEmpty() }
-                .split(',').first().trim()
-            if (url.isBlank()) return@withContext
-            val ids = chans.filter { it.epgId.isNotBlank() }.map { it.epgId.lowercase() }.toSet()
-            val names = chans.filter { it.epgId.isBlank() }.map { it.name.lowercase().trim() }.toSet()
-            Http.open(url, uaHeaders(s)).use { Xmltv.parse(it, ids, names, now - 2 * 3600_000L, now + 36 * 3600_000L) }
+        val from = now - 2 * 3600_000L
+        val to = now + 48 * 3600_000L
+        val merged = HashMap<String, List<Programme>>()
+        val icons = HashMap<String, String>()
+        val index = ArrayList<Pair<String, String>>()
+        if (s.type == SourceType.STALKER) {
+            try { merged.putAll(stalker(s.id).epg()) } catch (e: Exception) { Log.w("Repo", "stalker epg", e) }
         }
+        val own = s.epgUrl.ifBlank { autoEpgUrl(s.id) }.split(',').map { it.trim() }.filter { it.isNotBlank() }.take(3)
+        val urls = (own + globalEpgUrls()).distinct()
+        val ids = chans.filter { it.epgId.isNotBlank() }.map { it.epgId.lowercase() }.toSet()
+        val names = chans.map { EpgNorm.norm(it.name) }.filter { it.isNotEmpty() }.toSet()
+        var errors = 0
+        for (u in urls) {
+            try {
+                val r = Http.open(u, uaHeaders(s)).use { Xmltv.parse(it, ids, names, from, to) }
+                r.programmes.forEach { (k, v) -> merged.putIfAbsent(k, v) }
+                r.icons.forEach { (k, v) -> icons.putIfAbsent(k, v) }
+                index.addAll(r.index)
+            } catch (e: Exception) {
+                errors++
+                Log.w("Repo", "EPG $u", e)
+            }
+        }
+        if (merged.isEmpty() && urls.isNotEmpty() && errors == urls.size) throw IOException("Guide TV injoignable")
         val o = JSONObject()
-        map.forEach { (k, list) ->
+        merged.forEach { (k, list) ->
             val a = JSONArray()
             list.forEach { p -> a.put(JSONArray().put(p.start).put(p.end).put(p.title).put(p.desc)) }
             o.put(k, a)
         }
         file("epg_${s.id}.json").writeText(o.toString())
-        synchronized(this@Repo) { epgCache[s.id] = map }
+        val io = JSONObject()
+        icons.forEach { (k, v) -> io.put(k, v) }
+        file("epgicons_${s.id}.json").writeText(io.toString())
+        val ix = JSONArray()
+        index.distinctBy { it.first }.forEach { ix.put(JSONArray().put(it.first).put(it.second)) }
+        file("epgindex_${s.id}.json").writeText(ix.toString())
+        synchronized(this@Repo) {
+            epgCache[s.id] = merged
+            iconCache[s.id] = icons
+        }
+        val matched = chans.count { c -> epgKeys(c).any { merged.containsKey(it) } }
+        prefs.edit().putString("epgstat_${s.id}", "$matched/${chans.size}").apply()
         bump()
+    }
+
+    private val iconCache = HashMap<String, Map<String, String>>()
+    private val shortCache = HashMap<String, List<Programme>>()
+
+    fun epgKeys(ch: Channel): List<String> = listOfNotNull(
+        ch.epgId.takeIf { it.isNotBlank() }?.lowercase(),
+        "name:" + EpgNorm.norm(ch.name)
+    )
+
+    @Synchronized
+    fun epgIcon(ch: Channel): String {
+        val m = iconCache.getOrPut(ch.sourceId) {
+            val f = file("epgicons_${ch.sourceId}.json")
+            if (!f.exists()) return@getOrPut emptyMap()
+            try {
+                val o = JSONObject(f.readText())
+                val r = HashMap<String, String>()
+                val keys = o.keys()
+                while (keys.hasNext()) { val k = keys.next(); r[k] = o.getString(k) }
+                r
+            } catch (e: Exception) { emptyMap() }
+        }
+        if (m.isEmpty()) return ""
+        for (k in epgKeys(ch)) m[k]?.let { return it }
+        return ""
+    }
+
+    /** Liste (identifiant, nom) des chaînes présentes dans les guides, pour l'association manuelle. */
+    fun epgIndex(sourceId: String): List<Pair<String, String>> = try {
+        val a = JSONArray(file("epgindex_$sourceId.json").readText())
+        List(a.length()) { a.getJSONArray(it).let { e -> e.getString(0) to e.getString(1) } }
+    } catch (e: Exception) {
+        emptyList()
+    }
+
+    /** Guide de secours : EPG court du serveur Xtream pour une chaîne sans programmes. */
+    suspend fun fetchShortEpg(ch: Channel) = withContext(Dispatchers.IO) {
+        if (programmes(ch).isNotEmpty()) return@withContext
+        val s = sources.firstOrNull { it.id == ch.sourceId } ?: return@withContext
+        if (s.type != SourceType.XTREAM) return@withContext
+        val sid = ch.key.substringAfter("|L", "")
+        if (sid.isBlank()) return@withContext
+        try {
+            val l = XtreamClient(s).shortEpg(sid)
+            if (l.isNotEmpty()) synchronized(this@Repo) { shortCache[ch.key] = l }
+        } catch (_: Exception) {
+        }
     }
 
     @Synchronized
@@ -214,9 +306,14 @@ object Repo {
     }
 
     fun programmes(ch: Channel): List<Programme> {
-        val list = epg(ch.sourceId)[ch.epgKey] ?: return emptyList()
         val now = System.currentTimeMillis()
-        return list.filter { it.end > now }
+        synchronized(this) { shortCache[ch.key] }?.filter { it.end > now }?.takeIf { it.isNotEmpty() }?.let { return it }
+        val m = epg(ch.sourceId)
+        for (k in epgKeys(ch)) {
+            val l = m[k]?.filter { it.end > now }
+            if (!l.isNullOrEmpty()) return l
+        }
+        return emptyList()
     }
 
     fun nowNext(ch: Channel): Pair<Programme?, Programme?> {
@@ -247,10 +344,11 @@ object Repo {
     }
 
     fun findChannel(key: String): Channel? {
-        favorites[key]?.let { return it }
-        recents.firstOrNull { it.key == key }?.let { return it }
         playContext.firstOrNull { it.key == key }?.let { return it }
-        return channels(key.substringBefore('|')).firstOrNull { it.key == key }
+        favorites[key]?.let { return Edits.apply(it) }
+        recents.firstOrNull { it.key == key }?.let { return Edits.apply(it) }
+        Library.find(key)?.let { return it }
+        return channels(key.substringBefore('|')).firstOrNull { it.key == key }?.let { Edits.apply(it) }
     }
 
     // ---------- YouTube Live ----------

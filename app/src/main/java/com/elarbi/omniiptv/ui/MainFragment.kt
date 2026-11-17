@@ -13,6 +13,8 @@ import androidx.leanback.widget.OnItemViewClickedListener
 import androidx.lifecycle.lifecycleScope
 import androidx.tvprovider.media.tv.TvContractCompat
 import com.elarbi.omniiptv.R
+import com.elarbi.omniiptv.data.Edits
+import com.elarbi.omniiptv.data.Library
 import com.elarbi.omniiptv.data.Repo
 import com.elarbi.omniiptv.home.HomeScreen
 import com.elarbi.omniiptv.home.HomeSyncWorker
@@ -28,7 +30,7 @@ class MainFragment : BrowseSupportFragment() {
     companion object {
         const val A_M3U = 1; const val A_XTREAM = 2; const val A_STALKER = 3; const val A_SOURCES = 4
         const val A_FREE = 5; const val A_SEARCH = 6; const val A_REFRESH = 7; const val A_HOME = 8
-        const val A_HOME_LIVE = 9; const val A_LIVE_TAB = 10; const val A_ABOUT = 11; const val A_YT = 12; const val A_REPOS = 13
+        const val A_HOME_LIVE = 9; const val A_LIVE_TAB = 10; const val A_ABOUT = 11; const val A_YT = 12; const val A_REPOS = 13; const val A_MANAGER = 14; const val A_EPG = 15
     }
 
     private val rowsAdapter = ArrayObjectAdapter(ListRowPresenter())
@@ -61,6 +63,8 @@ class MainFragment : BrowseSupportFragment() {
         ActionItem(A_M3U, "Ajouter une liste M3U", "Lien m3u / m3u8", R.drawable.ic_add),
         ActionItem(A_XTREAM, "Ajouter Xtream Codes", "Serveur + identifiants", R.drawable.ic_add),
         ActionItem(A_STALKER, "Ajouter un portail MAC", "Stalker / MAG", R.drawable.ic_add),
+        ActionItem(A_MANAGER, "Gestionnaire de chaînes", "Ordre, groupes, noms, logos, guide", R.drawable.ic_list),
+        ActionItem(A_EPG, "Guides TV", "EPG automatique et supplémentaire", R.drawable.ic_tv),
         ActionItem(A_REPOS, "Dépôts", "Installer des listes en un clic", R.drawable.ic_list),
         ActionItem(A_YT, "Chaînes YouTube Live", "Ajouter un direct YouTube", R.drawable.ic_add),
         ActionItem(A_SOURCES, "Mes sources", Repo.activeSource()?.name ?: "Aucune source", R.drawable.ic_list),
@@ -84,12 +88,14 @@ class MainFragment : BrowseSupportFragment() {
             a.addAll(0, items)
             rowsAdapter.add(ListRow(HeaderItem(id++, title), a))
         }
-        addRow("★ Favoris", Repo.favorites.values.toList())
-        addRow("Récents", Repo.recents.toList())
+        addRow("★ Favoris", Repo.favorites.values.map { Edits.apply(it) })
+        addRow("Continuer la lecture", Library.resume.values.toList())
+        addRow("À regarder", Library.watchlist.values.toList())
+        addRow("Récents", Repo.recents.map { Edits.apply(it) })
         val src = Repo.activeSource()
         if (src != null) {
             val groups = LinkedHashMap<String, MutableList<Channel>>()
-            Repo.channels(src.id).forEach { groups.getOrPut(it.group.ifBlank { "Sans catégorie" }) { mutableListOf() }.add(it) }
+            Edits.view(src.id).forEach { groups.getOrPut(it.group.ifBlank { "Sans catégorie" }) { mutableListOf() }.add(it) }
             groups.forEach { (g, l) -> addRow(g, l) }
         }
         if (src?.id != Repo.YT_ID) addRow("YouTube Live", Repo.youtubeChannels())
@@ -99,6 +105,10 @@ class MainFragment : BrowseSupportFragment() {
     private fun onClick(item: Any?, row: ListRow?) {
         when (item) {
             is Channel -> {
+                if (item.url.startsWith("xtseries:")) {
+                    startActivity(Intent(requireContext(), SeriesActivity::class.java).putExtra("key", item.key))
+                    return
+                }
                 val a = row?.adapter
                 Repo.playContext = if (a != null) (0 until a.size()).mapNotNull { a.get(it) as? Channel } else listOf(item)
                 startActivity(Intent(requireContext(), PlayerActivity::class.java).putExtra("key", item.key))
@@ -107,12 +117,29 @@ class MainFragment : BrowseSupportFragment() {
         }
     }
 
+    /** Appui long : menu contextuel de la chaîne / du film / de la série. */
     private fun onLong(item: Any) {
-        if (item is Channel) {
+        if (item !is Channel) return
+        val ctx = requireContext()
+        val opts = ArrayList<Pair<String, () -> Unit>>()
+        opts += (if (Repo.isFavorite(item.key)) "Retirer des favoris" else "Ajouter aux favoris") to {
             val added = Repo.toggleFavorite(item)
-            Ui.toast(requireContext(), if (added) "« ${item.name} » ajoutée aux favoris" else "« ${item.name} » retirée des favoris")
-            HomeSyncWorker.runNow(requireContext())
+            Ui.toast(ctx, if (added) "Ajoutée aux favoris" else "Retirée des favoris")
+            HomeSyncWorker.runNow(ctx)
         }
+        opts += (if (Library.isWatch(item.key)) "Retirer de « À regarder »" else "Ajouter à « À regarder »") to {
+            Ui.toast(ctx, if (Library.toggleWatch(item)) "Ajouté à « À regarder »" else "Retiré de « À regarder »")
+        }
+        if (Library.resume.containsKey(item.key)) opts += "Retirer de « Continuer la lecture »" to { Library.finish(item) }
+        if (Repo.sources.any { it.id == item.sourceId }) {
+            opts += "Masquer" to { Edits.update(item.sourceId, item.key) { it.hidden = true } }
+            opts += "Gérer les chaînes…" to {
+                startActivity(Intent(ctx, ChannelManagerActivity::class.java).putExtra("source", item.sourceId))
+            }
+        }
+        android.app.AlertDialog.Builder(ctx).setTitle(item.name)
+            .setItems(opts.map { it.first }.toTypedArray()) { _, w -> opts[w].second(); build() }
+            .show()
     }
 
     private fun addSource(t: SourceType) =
@@ -124,6 +151,8 @@ class MainFragment : BrowseSupportFragment() {
             A_M3U -> addSource(SourceType.M3U)
             A_XTREAM -> addSource(SourceType.XTREAM)
             A_STALKER -> addSource(SourceType.STALKER)
+            A_MANAGER -> startActivity(Intent(ctx, ChannelManagerActivity::class.java))
+            A_EPG -> startActivity(Intent(ctx, EpgActivity::class.java))
             A_REPOS -> startActivity(Intent(ctx, ReposActivity::class.java))
             A_YT -> startActivity(Intent(ctx, YoutubeActivity::class.java))
             A_SOURCES -> startActivity(Intent(ctx, SourcesActivity::class.java))

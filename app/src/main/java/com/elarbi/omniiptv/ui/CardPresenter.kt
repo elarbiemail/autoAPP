@@ -7,6 +7,7 @@ import androidx.leanback.widget.ImageCardView
 import androidx.leanback.widget.Presenter
 import com.bumptech.glide.Glide
 import com.elarbi.omniiptv.R
+import com.elarbi.omniiptv.data.Library
 import com.elarbi.omniiptv.data.Repo
 import com.elarbi.omniiptv.model.ActionItem
 import com.elarbi.omniiptv.model.Channel
@@ -31,8 +32,14 @@ class CardPresenter(private val onLong: (Any) -> Unit) : Presenter() {
         when (item) {
             is Channel -> {
                 card.titleText = item.name
-                val now = Repo.nowNext(item).first
-                card.contentText = if (now != null) "${Ui.hm(now.start)} ${now.title}" else item.group
+                val pct = if (item.isVod) Library.progress(item.key) else null
+                val now = if (item.isVod) null else Repo.nowNext(item).first
+                card.contentText = when {
+                    pct != null -> "▶ vu à $pct %"
+                    item.url.startsWith("xtseries:") -> "Série · ${item.group.removePrefix("Séries · ")}"
+                    now != null -> "${Ui.hm(now.start)} ${now.title}"
+                    else -> item.group
+                }
                 card.badgeImage = if (Repo.isFavorite(item.key)) ContextCompat.getDrawable(ctx, R.drawable.ic_star) else null
                 if (item.logo.isNotBlank()) {
                     Glide.with(ctx).load(item.logo).placeholder(R.drawable.ic_tv).error(R.drawable.ic_tv).into(card.mainImageView)

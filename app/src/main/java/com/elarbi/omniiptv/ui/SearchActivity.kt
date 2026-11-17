@@ -38,7 +38,9 @@ class ChannelSearchFragment : SearchSupportFragment(), SearchSupportFragment.Sea
         super.onCreate(savedInstanceState)
         setSearchResultProvider(this)
         setOnItemViewClickedListener(OnItemViewClickedListener { _, item, _, row ->
-            if (item is Channel) {
+            if (item is Channel && item.url.startsWith("xtseries:")) {
+                startActivity(Intent(requireContext(), SeriesActivity::class.java).putExtra("key", item.key))
+            } else if (item is Channel) {
                 val a = (row as? ListRow)?.adapter
                 Repo.playContext = if (a != null) (0 until a.size()).mapNotNull { a.get(it) as? Channel } else listOf(item)
                 startActivity(Intent(requireContext(), PlayerActivity::class.java).putExtra("key", item.key))
@@ -60,7 +62,7 @@ class ChannelSearchFragment : SearchSupportFragment(), SearchSupportFragment.Sea
             if (n.length < 2) { rows.clear(); return@launch }
             val bySource = withContext(Dispatchers.Default) {
                 Repo.sources.map { s ->
-                    s.name to Repo.channels(s.id).filter { Ui.norm(it.name).contains(n) }.take(150)
+                    s.name to com.elarbi.omniiptv.data.Edits.view(s.id).filter { Ui.norm(it.name).contains(n) }.take(150)
                 }.filter { it.second.isNotEmpty() }
             }
             rows.clear()

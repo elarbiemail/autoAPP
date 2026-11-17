@@ -23,10 +23,10 @@ object TifSync {
     fun inputId(ctx: Context): String = TvContract.buildInputId(ComponentName(ctx, OmniTvInputService::class.java))
 
     fun selection(): List<Channel> {
-        val fav = Repo.favorites.values.filter { !it.isVod }
+        val fav = Repo.favorites.values.filter { !it.isVod }.map { com.elarbi.omniiptv.data.Edits.apply(it) }
         if (fav.isNotEmpty()) return fav
         val s = Repo.activeSource() ?: return emptyList()
-        return Repo.channels(s.id).filter { !it.isVod }.take(800)
+        return com.elarbi.omniiptv.data.Edits.view(s.id).filter { !it.isVod }.take(800)
     }
 
     /** Renvoie le nombre de chaînes publiées. */

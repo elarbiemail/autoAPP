@@ -55,6 +55,9 @@
 
         <activity android:name=".ui.AddSourceActivity" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".ui.SourcesActivity" />
+        <activity android:name=".ui.ChannelManagerActivity" />
+        <activity android:name=".ui.EpgActivity" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".ui.SeriesActivity" />
         <activity android:name=".ui.FreeSearchActivity" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".ui.SearchActivity" />
         <activity

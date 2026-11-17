@@ -1,6 +1,8 @@
 package com.elarbi.omniiptv.data
 
+import android.util.Base64
 import com.elarbi.omniiptv.model.Channel
+import com.elarbi.omniiptv.model.Programme
 import com.elarbi.omniiptv.model.Source
 import org.json.JSONArray
 import org.json.JSONObject
@@ -66,7 +68,69 @@ class XtreamClient(private val s: Source) {
             }
         } catch (_: Exception) {
         }
+        try { out.addAll(series()) } catch (_: Exception) {}
         return out
+    }
+
+    /** Séries : une entrée par série (url « xtseries:id »), les épisodes sont chargés à l'ouverture. */
+    fun series(): List<Channel> {
+        val cats = categories("get_series_categories")
+        val a = JSONArray(Http.get(api("get_series"), headers()))
+        return (0 until a.length()).map { i ->
+            val o = a.getJSONObject(i)
+            val id = o.str("series_id")
+            Channel(
+                key = "${s.id}|S$id", sourceId = s.id, name = o.str("name"), url = "xtseries:$id",
+                logo = o.str("cover"), group = "Séries · " + (cats[o.str("category_id")] ?: "Divers"),
+                userAgent = s.userAgent, isVod = true
+            )
+        }
+    }
+
+    fun episodes(seriesId: String, seriesName: String): List<Channel> {
+        val o = JSONObject(Http.get(api("get_series_info") + "&series_id=$seriesId", headers()))
+        val eps = o.optJSONObject("episodes") ?: return emptyList()
+        val cover = o.optJSONObject("info")?.str("cover").orEmpty()
+        val out = ArrayList<Channel>()
+        val seasons = ArrayList<String>()
+        val keys = eps.keys()
+        while (keys.hasNext()) seasons.add(keys.next())
+        seasons.sortBy { it.toIntOrNull() ?: 0 }
+        for (season in seasons) {
+            val arr = eps.optJSONArray(season) ?: continue
+            for (i in 0 until arr.length()) {
+                val e = arr.getJSONObject(i)
+                val id = e.str("id")
+                val ext = e.str("container_extension").ifBlank { "mp4" }
+                val img = e.optJSONObject("info")?.str("movie_image").orEmpty().ifBlank { cover }
+                val num = e.str("episode_num")
+                val title = e.str("title")
+                out.add(
+                    Channel(
+                        key = "${s.id}|E$id", sourceId = s.id,
+                        name = "S$season E$num · $title",
+                        url = "$base/series/${s.username}/${s.password}/$id.$ext",
+                        logo = img, group = seriesName, userAgent = s.userAgent, isVod = true
+                    )
+                )
+            }
+        }
+        return out
+    }
+
+    /** Guide court fourni par le serveur Xtream (titres encodés en Base64). */
+    fun shortEpg(streamId: String): List<Programme> {
+        val o = JSONObject(Http.get(api("get_short_epg") + "&stream_id=$streamId&limit=8", headers()))
+        val a = o.optJSONArray("epg_listings") ?: return emptyList()
+        fun dec(v: String) = try { String(Base64.decode(v, Base64.DEFAULT), Charsets.UTF_8) } catch (e: Exception) { v }
+        return (0 until a.length()).map { i ->
+            val e = a.getJSONObject(i)
+            Programme(
+                e.str("start_timestamp").toLongOrNull()?.times(1000) ?: 0L,
+                e.str("stop_timestamp").toLongOrNull()?.times(1000) ?: 0L,
+                dec(e.str("title")), dec(e.str("description"))
+            )
+        }.filter { it.end > 0 }.sortedBy { it.start }
     }
 
     private fun categories(action: String): Map<String, String> = try {
