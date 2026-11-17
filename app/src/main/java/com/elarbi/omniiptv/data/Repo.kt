@@ -141,10 +141,17 @@ object Repo {
 
     /** Télécharge la liste des chaînes d'une source (et son guide TV). Renvoie le nombre de chaînes. */
     suspend fun refresh(s: Source, withEpg: Boolean = true): Int = withContext(Dispatchers.IO) {
+        Loading.start(s.name)
+        try { refreshInner(s, withEpg) } finally { Loading.finish() }
+    }
+
+    private suspend fun refreshInner(s: Source, withEpg: Boolean): Int = withContext(Dispatchers.IO) {
         var autoEpg = ""
         val list: List<Channel> = when (s.type) {
             SourceType.M3U -> {
-                val r = M3uParser.parse(Http.get(s.url, uaHeaders(s)), s.id)
+                val text = Http.getTracked(s.url, "Téléchargement de la liste", uaHeaders(s))
+                Loading.step("Lecture de la liste…")
+                val r = M3uParser.parse(text, s.id)
                 autoEpg = r.epgUrl
                 r.channels
             }
@@ -162,11 +169,14 @@ object Repo {
             SourceType.TUNER -> TunerSource.channels(app)
         }
         if (list.isEmpty()) throw IOException("Aucune chaîne trouvée")
+        Loading.items(list.size)
+        Loading.step("Enregistrement de ${list.size} éléments…")
         saveChannels("ch_${s.id}.json", list)
         synchronized(this@Repo) { channelCache[s.id] = list }
         if (autoEpg.isNotBlank()) prefs.edit().putString("autoepg_${s.id}", autoEpg).apply()
         bump()
         if (withEpg) {
+            Loading.step("Guide TV…")
             try { refreshEpg(s) } catch (e: Exception) { Log.w("Repo", "EPG", e) }
         }
         list.size
@@ -197,6 +207,7 @@ object Repo {
         val index = ArrayList<Pair<String, String>>()
         if (s.type == SourceType.STALKER) {
             try {
+                Loading.step("Guide TV du portail…")
                 val stk = stalker(s.id).epg()
                 merged.putAll(stk)
                 // Rattache aussi le guide du portail aux clés de chaque chaîne (xmltv_id, nom).
@@ -214,7 +225,7 @@ object Repo {
         var errors = 0
         for (u in urls) {
             try {
-                val r = Http.open(u, uaHeaders(s)).use { Xmltv.parse(it, ids, names, from, to) }
+                val r = Http.openTracked(u, "Guide TV ${urls.indexOf(u) + 1}/${urls.size}", uaHeaders(s)).use { Xmltv.parse(it, ids, names, from, to) }
                 r.programmes.forEach { (k, v) -> merged.putIfAbsent(k, v) }
                 r.icons.forEach { (k, v) -> icons.putIfAbsent(k, v) }
                 index.addAll(r.index)

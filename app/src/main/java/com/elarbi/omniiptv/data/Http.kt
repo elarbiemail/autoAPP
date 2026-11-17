@@ -53,6 +53,21 @@ object Http {
         }
     }
 
+    /** Téléchargement avec suivi de progression (listes M3U, guides TV). */
+    fun openTracked(url: String, label: String, headers: Map<String, String> = emptyMap()): InputStream {
+        if (url.startsWith("/") || url.startsWith("file://")) return open(url, headers)
+        val b = Request.Builder().url(url)
+        if (headers.keys.none { it.equals("User-Agent", true) }) b.header("User-Agent", DEFAULT_UA)
+        headers.forEach { (k, v) -> b.header(k, v) }
+        val resp = client.newCall(b.build()).execute()
+        if (!resp.isSuccessful) { val c = resp.code; resp.close(); throw IOException("HTTP $c") }
+        val body = resp.body ?: throw IOException("Réponse vide")
+        return Loading.track(body.byteStream(), label, body.contentLength())
+    }
+
+    fun getTracked(url: String, label: String, headers: Map<String, String> = emptyMap()): String =
+        openTracked(url, label, headers).use { String(it.readBytes(), Charsets.UTF_8) }
+
     fun get(url: String, headers: Map<String, String> = emptyMap()): String =
         open(url, headers).use { String(it.readBytes(), Charsets.UTF_8) }
 

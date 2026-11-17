@@ -155,11 +155,11 @@ class FreeSearchActivity : FragmentActivity() {
         Repo.upsertSource(s)
         Repo.activeSourceId = s.id
         status.text = "Enregistrement de « ${s.name} »…"
-        lifecycleScope.launch {
+        ProgressUi.run(this, "Chargement de « ${s.name} »", { Repo.refresh(s) }) { r ->
             try {
-                val n = Repo.refresh(s)
+                val n = r.getOrThrow()
                 status.text = "Source « ${s.name} » ajoutée ($n chaînes). Elle est maintenant affichée à l'accueil de l'application."
-                HomeSyncWorker.runNow(this@FreeSearchActivity)
+                HomeSyncWorker.runNow(this)
             } catch (e: Exception) {
                 status.text = "Échec : ${e.message}"
             }

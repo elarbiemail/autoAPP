@@ -349,7 +349,7 @@ class PlayerActivity : FragmentActivity() {
                 return
             }
             val hint = if (StreamResolver.isStalker(ch)) " Réglages > Mes sources > diagnostic du portail pour le détail." else ""
-            showInfo(ch, "Lecture impossible (${error.errorCodeName}).$hint")
+            showInfo(ch, "Lecture impossible : ${explain(error)}.$hint")
             handler.removeCallbacks(hideInfo)
         }
     }
@@ -381,6 +381,35 @@ class PlayerActivity : FragmentActivity() {
             startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(uri)))
         } catch (e: Exception) {
             showInfo(ch, "Impossible d'ouvrir cette chaîne du téléviseur.")
+        }
+    }
+
+    /** Explication lisible d'une erreur de lecture (code HTTP, serveur, format). */
+    private fun explain(error: PlaybackException): String {
+        var c: Throwable? = error
+        while (c != null) {
+            if (c is androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) {
+                val host = try { android.net.Uri.parse(c.dataSpec.uri.toString()).host } catch (e: Exception) { null }
+                val why = when (c.responseCode) {
+                    401, 403 -> "accès refusé (lien expiré, MAC non autorisée ou connexion déjà utilisée ailleurs)"
+                    404 -> "flux introuvable"
+                    429, 458, 509 -> "nombre maximal de connexions atteint (abonnement utilisé ailleurs ?)"
+                    in 500..599 -> "erreur du serveur de diffusion"
+                    else -> "réponse inattendue"
+                }
+                return "le serveur ${host ?: ""} répond HTTP ${c.responseCode} — $why"
+            }
+            if (c is androidx.media3.datasource.HttpDataSource.HttpDataSourceException && c !is androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) {
+                val host = try { android.net.Uri.parse(c.dataSpec.uri.toString()).host } catch (e: Exception) { null }
+                return "serveur de diffusion ${host ?: ""} injoignable (${c.cause?.javaClass?.simpleName ?: "réseau"})"
+            }
+            if (c is androidx.media3.common.ParserException) return "format du flux non reconnu"
+            c = c.cause
+        }
+        return when (error.errorCode) {
+            PlaybackException.ERROR_CODE_DECODER_INIT_FAILED, PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
+            PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES -> "format vidéo non pris en charge par ce téléviseur (H.265 / 4K ?)"
+            else -> error.errorCodeName
         }
     }
 

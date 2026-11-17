@@ -32,6 +32,7 @@ class XtreamClient(private val s: Source) {
     }
 
     fun channels(): List<Channel> {
+        Loading.step("Connexion au serveur Xtream…")
         val auth = JSONObject(Http.get(api(null), headers()))
         val ui = auth.optJSONObject("user_info")
         if (ui == null || ui.str("auth") == "0") throw IOException("Identifiants Xtream refusés")
@@ -43,8 +44,10 @@ class XtreamClient(private val s: Source) {
         }
 
         val out = ArrayList<Channel>()
+        Loading.step("Chaînes en direct…", 1, 3)
         val liveCats = categories("get_live_categories")
-        val live = JSONArray(Http.get(api("get_live_streams"), headers()))
+        val live = JSONArray(Http.getTracked(api("get_live_streams"), "Chaînes en direct (1/3)", headers()))
+        Loading.items(live.length())
         for (i in 0 until live.length()) {
             val o = live.getJSONObject(i)
             val id = o.str("stream_id")
@@ -59,8 +62,10 @@ class XtreamClient(private val s: Source) {
             )
         }
         try {
+            Loading.step("Films…", 2, 3)
             val vodCats = categories("get_vod_categories")
-            val vod = JSONArray(Http.get(api("get_vod_streams"), headers()))
+            val vod = JSONArray(Http.getTracked(api("get_vod_streams"), "Films (2/3)", headers()))
+            Loading.items(out.size + vod.length())
             for (i in 0 until vod.length()) {
                 val o = vod.getJSONObject(i)
                 val id = o.str("stream_id")
@@ -76,7 +81,9 @@ class XtreamClient(private val s: Source) {
             }
         } catch (_: Exception) {
         }
+        Loading.step("Séries…", 3, 3)
         try { out.addAll(series()) } catch (_: Exception) {}
+        Loading.items(out.size)
         return out
     }
 

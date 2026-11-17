@@ -66,6 +66,7 @@ class AddSourceActivity : FragmentActivity() {
                 title.text = "Portail MAC (Stalker / MAG)"
                 help.text = "Adresse du portail (http://portail:port/c/) et adresse MAC enregistrée auprès de votre fournisseur. " +
                     "Identifiant et mot de passe : seulement si votre fournisseur en a donné."
+                fUa.hint = "Modèle de boîtier : MAG250 (défaut), MAG254, MAG270, MAG322, MAG420 — ou User-Agent complet"
                 fUser.hint = "Identifiant (facultatif)"
                 fPass.hint = "Mot de passe (facultatif)"
                 fUrl.hint = "URL du portail (http://exemple.com:8080/c/)"
@@ -120,13 +121,12 @@ class AddSourceActivity : FragmentActivity() {
         Repo.activeSourceId = s.id
         status.text = "Chargement des chaînes…"
         btnSave.isEnabled = false
-        lifecycleScope.launch {
-            try {
-                val n = Repo.refresh(s)
-                Ui.toast(this@AddSourceActivity, "$n chaînes chargées")
-                HomeSyncWorker.runNow(this@AddSourceActivity)
+        ProgressUi.run(this, "Chargement de « ${s.name} »", { Repo.refresh(s) }) { r ->
+            r.onSuccess { n ->
+                Ui.toast(this, "$n éléments chargés")
+                HomeSyncWorker.runNow(this)
                 finish()
-            } catch (e: Exception) {
+            }.onFailure { e ->
                 status.text = "Source enregistrée, mais le chargement a échoué : ${e.message}"
                 btnSave.isEnabled = true
             }

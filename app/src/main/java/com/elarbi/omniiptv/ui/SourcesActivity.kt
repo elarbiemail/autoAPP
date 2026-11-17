@@ -90,15 +90,9 @@ class SourcesActivity : FragmentActivity() {
     }
 
     private fun refresh(s: Source) {
-        Ui.toast(this, "Actualisation de « ${s.name} »…")
-        lifecycleScope.launch {
-            try {
-                val n = Repo.refresh(s)
-                Ui.toast(this@SourcesActivity, "$n chaînes chargées")
-                HomeSyncWorker.runNow(this@SourcesActivity)
-            } catch (e: Exception) {
-                Ui.toast(this@SourcesActivity, "Échec : ${e.message}")
-            }
+        ProgressUi.run(this, "Actualisation de « ${s.name} »", { Repo.refresh(s) }) { r ->
+            r.onSuccess { n -> Ui.toast(this, "$n éléments chargés"); HomeSyncWorker.runNow(this) }
+                .onFailure { e -> Ui.toast(this, "Échec : ${e.message}") }
             render()
         }
     }

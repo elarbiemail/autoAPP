@@ -263,20 +263,8 @@ class MainFragment : BrowseSupportFragment() {
     }
 
     private fun refreshActive() {
-        val ctx = requireContext()
-        val s = Repo.activeSource() ?: run { Ui.toast(ctx, "Ajoutez d'abord une source."); return }
-        progressBarManager.show()
-        lifecycleScope.launch {
-            try {
-                val n = Repo.refresh(s)
-                Ui.toast(ctx, "$n chaînes chargées depuis « ${s.name} »")
-                HomeSyncWorker.runNow(ctx)
-            } catch (e: Exception) {
-                Ui.toast(ctx, "Échec du chargement : ${e.message}")
-            } finally {
-                progressBarManager.hide()
-                if (isAdded) build()
-            }
-        }
+        val act = activity ?: return
+        AppActions.refresh(act) { if (isAdded) build() }
     }
+
 }

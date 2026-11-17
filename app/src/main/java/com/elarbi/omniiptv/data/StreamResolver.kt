@@ -24,13 +24,16 @@ object StreamResolver {
         val s = Repo.sources.firstOrNull { it.id == ch.sourceId } ?: return emptyMap()
         val mac = java.net.URLEncoder.encode(s.mac.trim().uppercase(), "UTF-8")
         val tz = java.net.URLEncoder.encode(java.util.TimeZone.getDefault().id, "UTF-8")
-        return mapOf("Cookie" to "mac=$mac; stb_lang=fr; timezone=$tz", "X-User-Agent" to "Model: MAG250; Link: WiFi")
+        val x = try { Repo.stalker(s.id).xUserAgent } catch (e: Exception) { "Model: MAG250; Link: Ethernet" }
+        return mapOf("Cookie" to "mac=$mac; stb_lang=fr; timezone=$tz", "X-User-Agent" to x)
     }
 
     /** Les liens des portails MAC sont à usage unique : il faut en redemander un à chaque essai. */
     fun isStalker(ch: Channel) = ch.url.startsWith("stalker:") || ch.url.startsWith("stkvod:")
 
     fun userAgent(ch: Channel): String =
+        if (isStalker(ch)) (try { Repo.stalker(ch.sourceId).userAgent } catch (e: Exception) { StalkerClient.MAG_UA }) else
+
         YouTube.userAgentFor(ch.key) ?: ch.userAgent.ifBlank { Repo.sources.firstOrNull { it.id == ch.sourceId }?.userAgent.orEmpty() }
             .ifBlank { Http.DEFAULT_UA }
 }

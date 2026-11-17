@@ -54,6 +54,15 @@ class StalkerClient(private val s: Source) {
     private var api = ""
 
     private val mac = s.mac.trim().uppercase()
+
+    /** Modèle de boîtier imité : champ « User-Agent » de la source = MAG250 (défaut), MAG254, MAG270, MAG322, MAG420, ou un User-Agent complet. */
+    val model: String = Regex("^MAG\\d{3}$", RegexOption.IGNORE_CASE).find(s.userAgent.trim())?.value?.uppercase() ?: "MAG250"
+    val userAgent: String = when {
+        s.userAgent.isNotBlank() && !s.userAgent.trim().uppercase().matches(Regex("^MAG\\d{3}$")) -> s.userAgent.trim()
+        model == "MAG250" -> MAG_UA
+        else -> "Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 4 rev: 2721 Mobile Safari/533.3"
+    }
+    val xUserAgent: String get() = "Model: $model; Link: Ethernet"
     private val tz: String = TimeZone.getDefault().id
     private val sn = hash("MD5", mac).take(13)
     private val deviceId = hash("SHA-256", mac)
@@ -89,8 +98,8 @@ class StalkerClient(private val s: Source) {
     private fun headers(endpoint: String): Map<String, String> {
         val cookie = "mac=${enc(mac)}; stb_lang=fr; timezone=${enc(tz)}" + if (token.isNotEmpty()) "; token=$token" else ""
         val h = mutableMapOf(
-            "User-Agent" to MAG_UA,
-            "X-User-Agent" to X_UA,
+            "User-Agent" to userAgent,
+            "X-User-Agent" to xUserAgent,
             "Cookie" to cookie,
             "Referer" to "${portalBase(endpoint)}/c/",
             "Accept" to "*/*"
@@ -133,8 +142,9 @@ class StalkerClient(private val s: Source) {
         if (!Regex("([0-9A-F]{2}:){5}[0-9A-F]{2}").matches(mac)) throw IOException("Adresse MAC invalide : $mac")
         val list = (listOfNotNull(api.ifBlank { null }) + candidates()).distinct()
         var last: Exception? = null
-        for (c in list) {
+        for ((n, c) in list.withIndex()) {
             try {
+                Loading.step("Connexion au portail (adresse ${n + 1}/${list.size})…")
                 token = ""
                 var js = try {
                     raw(c, "type=stb&action=handshake&token=") as? JSONObject
@@ -151,6 +161,7 @@ class StalkerClient(private val s: Source) {
                 token = t
                 tokenTime = System.currentTimeMillis()
                 api = c
+                Loading.step("Authentification de l'adresse MAC…")
                 profile()
                 if (s.username.isNotBlank()) doAuth()
                 return
@@ -167,7 +178,7 @@ class StalkerClient(private val s: Source) {
     private class PortalMessage(msg: String) : IOException(msg)
 
     private fun metrics(): String = JSONObject()
-        .put("mac", mac).put("sn", sn).put("type", "STB").put("model", "MAG250")
+        .put("mac", mac).put("sn", sn).put("type", "STB").put("model", model)
         .put("uid", deviceId).put("random", randomHex(40).lowercase())
         .toString()
 
@@ -175,7 +186,7 @@ class StalkerClient(private val s: Source) {
     private fun profile() {
         val ver = "ImageDescription: 0.2.18-r23-250; ImageDate: Fri Jan 15 15:20:44 EET 2016; PORTAL version: 5.6.1; " +
             "API Version: JS API version: 343; STB API version: 146; Player Engine version: 0x58c"
-        val q = "type=stb&action=get_profile&hd=1&ver=${enc(ver)}&num_banks=2&sn=$sn&stb_type=MAG250&client_type=STB" +
+        val q = "type=stb&action=get_profile&hd=1&ver=${enc(ver)}&num_banks=2&sn=$sn&stb_type=$model&client_type=STB" +
             "&image_version=218&video_out=hdmi&device_id=$deviceId&device_id2=$deviceId&signature=$signature" +
             "&auth_second_step=1&hw_version=1.7-BD-00&not_valid_token=0&metrics=${enc(metrics())}" +
             "&hw_version_2=$hwVersion2&timestamp=${System.currentTimeMillis() / 1000}&api_signature=262&prehash="
@@ -196,7 +207,9 @@ class StalkerClient(private val s: Source) {
 
     // ---------------- Pagination ----------------
     /** Récupère toutes les pages d'une liste (total_items / max_page_items). */
-    private fun paged(baseQuery: String, maxPages: Int): Pair<List<JSONObject>, Int> {
+    private fun paged(
+        baseQuery: String, maxPages: Int, onPage: ((page: Int, pages: Int, count: Int) -> Unit)? = null
+    ): Pair<List<JSONObject>, Int> {
         val out = ArrayList<JSONObject>()
         var p = 1
         var pages = 1
@@ -210,6 +223,7 @@ class StalkerClient(private val s: Source) {
             val total = js.str("total_items").toIntOrNull() ?: 0
             val per = js.str("max_page_items").toIntOrNull()?.takeIf { it > 0 } ?: data.length()
             pages = if (total > 0) (total + per - 1) / per else p
+            onPage?.invoke(p, minOf(pages, maxPages), out.size)
             p++
         }
         return out to fetched
@@ -239,9 +253,11 @@ class StalkerClient(private val s: Source) {
     // ---------------- Chaînes ----------------
     fun channels(): List<Channel> {
         login()
+        Loading.step("Catégories de chaînes…")
         val genres = categories("itv", "get_genres").toMap()
         val items = ArrayList<JSONObject>()
         try {
+            Loading.step("Liste complète des chaînes…")
             val arr = when (val js = call("type=itv&action=get_all_channels")) {
                 is JSONObject -> js.optJSONArray("data")
                 is JSONArray -> js
@@ -252,9 +268,13 @@ class StalkerClient(private val s: Source) {
         }
         if (items.isEmpty()) {
             // Portails qui n'autorisent que la liste paginée.
-            items += paged("type=itv&action=get_ordered_list&genre=*&fav=0&sortby=number", MAX_CHANNEL_PAGES).first
+            items += paged("type=itv&action=get_ordered_list&genre=*&fav=0&sortby=number", MAX_CHANNEL_PAGES) { p, pages, n ->
+                Loading.step("Chaînes : page $p / $pages", p, pages)
+                Loading.items(n)
+            }.first
         }
         if (items.isEmpty()) throw IOException("Aucune chaîne renvoyée par le portail (abonnement inactif ?)")
+        Loading.items(items.size)
         return items.distinctBy { it.str("id") }.map { o ->
             val id = o.str("id")
             val adult = o.str("censored") == "1"
@@ -262,7 +282,7 @@ class StalkerClient(private val s: Source) {
             Channel(
                 key = "${s.id}|stk$id", sourceId = s.id, name = o.str("name"),
                 url = "stalker:" + o.str("cmd"), logo = logoUrl(o.str("logo")), group = group,
-                epgId = o.str("xmltv_id").ifBlank { "stk:$id" }, userAgent = MAG_UA
+                epgId = o.str("xmltv_id").ifBlank { "stk:$id" }, userAgent = userAgent
             )
         }
     }
@@ -307,9 +327,17 @@ class StalkerClient(private val s: Source) {
         login()
         val out = ArrayList<Channel>()
         var budget = MAX_VOD_PAGES
-        for ((cid, title) in categories("vod", "get_categories")) {
-            if (cid == "*" || cid.isBlank() || budget <= 0) continue
-            val (items, used) = paged("type=vod&action=get_ordered_list&category=$cid&sortby=added", minOf(budget, 20))
+        val base = Loading.items
+        Loading.step("Catégories de films et séries…")
+        val cats = categories("vod", "get_categories").filter { it.first != "*" && it.first.isNotBlank() }
+        for ((ci, cat) in cats.withIndex()) {
+            val (cid, title) = cat
+            if (budget <= 0) break
+            Loading.step("Films et séries : « $title » (${ci + 1}/${cats.size})", ci + 1, cats.size)
+            val (items, used) = paged("type=vod&action=get_ordered_list&category=$cid&sortby=added", minOf(budget, 20)) { p, pages, n ->
+                Loading.step("Films et séries : « $title » (${ci + 1}/${cats.size}) — page $p/$pages", ci + 1, cats.size)
+                Loading.items(base + out.size + n)
+            }
             budget -= used
             for (o in items) {
                 val id = o.str("id")
@@ -320,12 +348,12 @@ class StalkerClient(private val s: Source) {
                     val extra = if (nums.isNotBlank()) "|$nums|${o.str("cmd")}" else ""
                     out += Channel(
                         key = "${s.id}|SS$id", sourceId = s.id, name = o.str("name"), url = "stkseries:$id$extra",
-                        logo = img, group = "Séries · $title", userAgent = MAG_UA, isVod = true
+                        logo = img, group = "Séries · $title", userAgent = userAgent, isVod = true
                     )
                 } else {
                     out += Channel(
                         key = "${s.id}|SV$id", sourceId = s.id, name = o.str("name"), url = "stkvod::" + o.str("cmd"),
-                        logo = img, group = "Films · $title", userAgent = MAG_UA, isVod = true
+                        logo = img, group = "Films · $title", userAgent = userAgent, isVod = true
                     )
                 }
             }
@@ -353,7 +381,7 @@ class StalkerClient(private val s: Source) {
                     key = "${s.id}|E${sid}_${e.str("id")}", sourceId = s.id,
                     name = "S$sNum E${e.str("series_number").ifBlank { (i + 1).toString() }} · ${e.str("name")}",
                     url = "stkvod::" + e.str("cmd"), logo = imageUrl(e.str("screenshot_uri")),
-                    group = seriesName, userAgent = MAG_UA, isVod = true
+                    group = seriesName, userAgent = userAgent, isVod = true
                 )
             }
         }
@@ -364,7 +392,7 @@ class StalkerClient(private val s: Source) {
             nums.forEach { num ->
                 out += Channel(
                     key = "${s.id}|E${id}_$num", sourceId = s.id, name = "Épisode $num", url = "stkvod:$num:$cmd",
-                    group = seriesName, userAgent = MAG_UA, isVod = true
+                    group = seriesName, userAgent = userAgent, isVod = true
                 )
             }
         }
@@ -436,6 +464,7 @@ class StalkerClient(private val s: Source) {
     fun diagnostic(): String = buildString {
         appendLine("Adresse saisie : ${s.url}")
         appendLine("Adresse MAC : $mac   (sn $sn)")
+        appendLine("Boîtier imité : $model")
         try {
             login()
             appendLine("Point d'accès : $api")
@@ -461,7 +490,7 @@ class StalkerClient(private val s: Source) {
     /** Ouvre le lien comme le lecteur (en-têtes MAG) et identifie le format reçu. */
     private fun probe(link: String): String = try {
         val h = mapOf(
-            "User-Agent" to MAG_UA, "X-User-Agent" to X_UA,
+            "User-Agent" to userAgent, "X-User-Agent" to xUserAgent,
             "Cookie" to "mac=${enc(mac)}; stb_lang=fr; timezone=${enc(tz)}"
         )
         Http.open(link, h).use { input ->
