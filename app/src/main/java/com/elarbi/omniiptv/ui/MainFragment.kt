@@ -16,6 +16,7 @@ import com.elarbi.omniiptv.R
 import com.elarbi.omniiptv.data.Edits
 import com.elarbi.omniiptv.data.Library
 import com.elarbi.omniiptv.data.Repo
+import com.elarbi.omniiptv.data.TunerSource
 import com.elarbi.omniiptv.home.HomeScreen
 import com.elarbi.omniiptv.home.HomeSyncWorker
 import com.elarbi.omniiptv.model.ActionItem
@@ -31,7 +32,7 @@ class MainFragment : BrowseSupportFragment() {
         const val A_M3U = 1; const val A_XTREAM = 2; const val A_STALKER = 3; const val A_SOURCES = 4
         const val A_FREE = 5; const val A_SEARCH = 6; const val A_REFRESH = 7; const val A_HOME = 8
         const val A_HOME_LIVE = 9; const val A_LIVE_TAB = 10; const val A_ABOUT = 11; const val A_YT = 12; const val A_REPOS = 13; const val A_MANAGER = 14; const val A_EPG = 15
-        const val A_LIST = 16; const val A_GRID = 17; const val A_GUIDE = 18; const val A_MULTI = 19; const val A_SETTINGS = 20
+        const val A_LIST = 16; const val A_GRID = 17; const val A_GUIDE = 18; const val A_MULTI = 19; const val A_SETTINGS = 20; const val A_TUNER = 21
     }
 
     private val rowsAdapter = ArrayObjectAdapter(ListRowPresenter())
@@ -60,34 +61,31 @@ class MainFragment : BrowseSupportFragment() {
         }
     }
 
+    /** Rangée de raccourcis en tête ; toutes les options sont regroupées dans ⚙ Réglages. */
     private fun actions(): List<ActionItem> = listOf(
-        ActionItem(A_GUIDE, "Guide TV (grille)", "Programmes, replay, rappels", R.drawable.ic_tv),
+        ActionItem(A_SETTINGS, "⚙ Réglages", "Toutes les options de l'application", R.drawable.ic_info),
+        ActionItem(A_SEARCH, "Rechercher", "Dans toutes les sources", R.drawable.ic_search),
+        ActionItem(A_GUIDE, "Guide TV", "Grille des programmes", R.drawable.ic_tv),
         ActionItem(A_LIST, "Vue liste", "Direct, films, séries…", R.drawable.ic_list),
         ActionItem(A_GRID, "Vue grille", "Vignettes et affiches", R.drawable.ic_home),
         ActionItem(A_MULTI, "Multi-écran", "4 chaînes à la fois", R.drawable.ic_tv),
-        ActionItem(A_SETTINGS, "Réglages", "Démarrage, lecteur, parental, sauvegarde", R.drawable.ic_info),
-        ActionItem(A_M3U, "Ajouter une liste M3U", "Lien m3u / m3u8", R.drawable.ic_add),
-        ActionItem(A_XTREAM, "Ajouter Xtream Codes", "Serveur + identifiants", R.drawable.ic_add),
-        ActionItem(A_STALKER, "Ajouter un portail MAC", "Stalker / MAG", R.drawable.ic_add),
-        ActionItem(A_MANAGER, "Gestionnaire de chaînes", "Ordre, groupes, noms, logos, guide", R.drawable.ic_list),
-        ActionItem(A_EPG, "Guides TV", "EPG automatique et supplémentaire", R.drawable.ic_tv),
-        ActionItem(A_REPOS, "Dépôts", "Installer des listes en un clic", R.drawable.ic_list),
-        ActionItem(A_YT, "Chaînes YouTube Live", "Ajouter un direct YouTube", R.drawable.ic_add),
-        ActionItem(A_SOURCES, "Mes sources", Repo.activeSource()?.name ?: "Aucune source", R.drawable.ic_list),
-        ActionItem(A_FREE, "Listes gratuites", "Chercher des chaînes en libre accès", R.drawable.ic_globe),
-        ActionItem(A_SEARCH, "Rechercher une chaîne", "Dans toutes les sources", R.drawable.ic_search),
-        ActionItem(A_REFRESH, "Actualiser", "Chaînes et guide TV", R.drawable.ic_refresh),
-        ActionItem(A_HOME, "Écran d'accueil", "Mettre à jour les rangées", R.drawable.ic_home),
-        ActionItem(A_HOME_LIVE, "Rangée « En ce moment »", "Programmes en cours sur l'accueil", R.drawable.ic_home),
-        ActionItem(A_LIVE_TAB, "Onglet Direct", "Chaînes dans le guide Google TV", R.drawable.ic_tv),
-        ActionItem(A_ABOUT, "Aide", "Raccourcis télécommande", R.drawable.ic_info)
+        ActionItem(A_SOURCES, "Mes sources", Repo.activeSource()?.name ?: "Aucune source", R.drawable.ic_list)
     )
+
+    /** Exécute une action demandée depuis l'écran Réglages. */
+    fun runAction(id: Int) {
+        if (!isAdded) return
+        handleAction(ActionItem(id, "", "", 0))
+    }
 
     private fun build() {
         builtVersion = Repo.version
         rowsAdapter.clear()
         var id = 0L
         val presenter = CardPresenter { onLong(it) }
+        val menu = ArrayObjectAdapter(presenter)
+        menu.addAll(0, actions())
+        rowsAdapter.add(ListRow(HeaderItem(id++, "Menu"), menu))
         fun addRow(title: String, items: List<Any>) {
             if (items.isEmpty()) return
             val a = ArrayObjectAdapter(presenter)
@@ -105,7 +103,6 @@ class MainFragment : BrowseSupportFragment() {
             groups.forEach { (g, l) -> addRow(g, l) }
         }
         if (src?.id != Repo.YT_ID) addRow("YouTube Live", Repo.youtubeChannels())
-        addRow("Outils et réglages", actions())
     }
 
     private fun onClick(item: Any?, row: ListRow?) {
@@ -157,6 +154,7 @@ class MainFragment : BrowseSupportFragment() {
             A_M3U -> addSource(SourceType.M3U)
             A_XTREAM -> addSource(SourceType.XTREAM)
             A_STALKER -> addSource(SourceType.STALKER)
+            A_TUNER -> tunerPermission.launch(TunerSource.permissions)
             A_GUIDE -> startActivity(Intent(ctx, GuideActivity::class.java))
             A_LIST -> startActivity(Intent(ctx, BrowseActivity::class.java).putExtra("mode", "list"))
             A_GRID -> startActivity(Intent(ctx, BrowseActivity::class.java).putExtra("mode", "grid"))
@@ -172,7 +170,16 @@ class MainFragment : BrowseSupportFragment() {
             A_REFRESH -> refreshActive()
             A_HOME -> {
                 HomeSyncWorker.runNow(ctx, epg = true)
-                Ui.toast(ctx, "Rangées de l'écran d'accueil en cours de mise à jour (favoris, programmes).")
+                AlertDialog.Builder(ctx).setTitle("Rangée Omni IPTV sur l'écran d'accueil")
+                    .setMessage(
+                        "La rangée « Omni IPTV » est en cours de mise à jour : programmes en cours de vos favoris, " +
+                            "films et épisodes à reprendre, liste « À regarder ».\n\n" +
+                            "Sur Google TV, elle apparaît dans l'onglet « Applications », comme YouTube ou CloudStream, " +
+                            "si Omni IPTV fait partie de vos applications favorites : dans « Vos applications », " +
+                            "maintenez OK sur l'icône Omni IPTV, puis « Déplacer » vers le début de la liste.\n\n" +
+                            "Sur Android TV classique : accueil > Personnaliser les chaînes > activer Omni IPTV."
+                    )
+                    .setPositiveButton("OK", null).show()
             }
             A_HOME_LIVE -> lifecycleScope.launch {
                 val id = withContext(Dispatchers.IO) {
@@ -217,6 +224,35 @@ class MainFragment : BrowseSupportFragment() {
                 )
                 .setPositiveButton("OK", null)
                 .show()
+        }
+    }
+
+    private val tunerPermission = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
+    ) { _ -> loadTuner() }
+
+    /** Ajoute la source « Chaînes du téléviseur » et l'affiche. */
+    private fun loadTuner() {
+        val ctx = context ?: return
+        TunerSource.ensureSource()
+        Repo.activeSourceId = TunerSource.ID
+        progressBarManager.show()
+        lifecycleScope.launch {
+            try {
+                val n = Repo.refresh(TunerSource.source())
+                Ui.toast(ctx, "$n chaînes du téléviseur ajoutées (TNT / satellite / câble)")
+                HomeSyncWorker.runNow(ctx)
+            } catch (e: Exception) {
+                AlertDialog.Builder(ctx).setTitle("Chaînes du téléviseur")
+                    .setMessage(
+                        (e.message ?: "Erreur") + "\n\nSi besoin : Paramètres du téléviseur > Applications > Omni IPTV > " +
+                            "Autorisations > activer « Chaînes et programmes TV »."
+                    )
+                    .setPositiveButton("OK", null).show()
+            } finally {
+                progressBarManager.hide()
+                if (isAdded) build()
+            }
         }
     }
 

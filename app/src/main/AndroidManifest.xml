@@ -6,6 +6,7 @@
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.READ_TV_LISTINGS" />
     <uses-permission android:name="com.android.providers.tv.permission.READ_EPG_DATA" />
     <uses-permission android:name="com.android.providers.tv.permission.WRITE_EPG_DATA" />
 
@@ -96,6 +97,11 @@
             </intent-filter>
             <meta-data android:name="android.media.tv.input" android:resource="@xml/tvinputservice" />
         </service>
+
+        <provider
+            android:name=".home.PosterProvider"
+            android:authorities="${applicationId}.posters"
+            android:exported="true" />
 
         <receiver android:name=".data.ReminderReceiver" android:exported="false" />
         <receiver android:name=".home.InitReceiver" android:exported="true">

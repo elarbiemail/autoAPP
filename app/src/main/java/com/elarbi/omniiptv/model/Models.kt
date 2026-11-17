@@ -2,7 +2,7 @@ package com.elarbi.omniiptv.model
 
 import org.json.JSONObject
 
-enum class SourceType { M3U, XTREAM, STALKER, YOUTUBE }
+enum class SourceType { M3U, XTREAM, STALKER, YOUTUBE, TUNER }
 
 data class Source(
     val id: String,
@@ -21,6 +21,7 @@ data class Source(
             SourceType.XTREAM -> "Xtream Codes"
             SourceType.STALKER -> "Portail MAC (Stalker)"
             SourceType.YOUTUBE -> "YouTube Live"
+            SourceType.TUNER -> "TNT / satellite / câble du téléviseur"
         }
 
     fun toJson(): JSONObject = JSONObject()

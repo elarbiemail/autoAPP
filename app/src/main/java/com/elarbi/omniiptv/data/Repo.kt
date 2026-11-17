@@ -158,6 +158,7 @@ object Repo {
                 stalker(s.id).channels()
             }
             SourceType.YOUTUBE -> return@withContext channels(s.id).size
+            SourceType.TUNER -> TunerSource.channels(app)
         }
         if (list.isEmpty()) throw IOException("Aucune chaîne trouvée")
         saveChannels("ch_${s.id}.json", list)
@@ -196,6 +197,7 @@ object Repo {
         if (s.type == SourceType.STALKER) {
             try { merged.putAll(stalker(s.id).epg()) } catch (e: Exception) { Log.w("Repo", "stalker epg", e) }
         }
+        if (s.type == SourceType.TUNER) merged.putAll(TunerSource.programmes(app, chans, from, to))
         val own = s.epgUrl.ifBlank { autoEpgUrl(s.id) }.split(',').map { it.trim() }.filter { it.isNotBlank() }.take(3)
         val urls = (own + globalEpgUrls()).distinct()
         val ids = chans.filter { it.epgId.isNotBlank() }.map { it.epgId.lowercase() }.toSet()

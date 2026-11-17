@@ -13,6 +13,7 @@ import com.elarbi.omniiptv.data.Edits
 import com.elarbi.omniiptv.data.Prefs
 import com.elarbi.omniiptv.data.Reminders
 import com.elarbi.omniiptv.data.Repo
+import com.elarbi.omniiptv.model.SourceType
 
 /** Réglages : démarrage, lecteur, contrôle parental, rappels, sauvegarde. */
 class SettingsActivity : FragmentActivity() {
@@ -41,17 +42,61 @@ class SettingsActivity : FragmentActivity() {
 
     private fun item(label: String, action: () -> Unit) = box.addView(Ui.button(this, label) { action(); render() })
 
+    private fun go(label: String, cls: Class<*>) =
+        box.addView(Ui.button(this, label) { startActivity(android.content.Intent(this, cls)) })
+
+    private fun add(label: String, t: SourceType) =
+        box.addView(Ui.button(this, label) { startActivity(android.content.Intent(this, AddSourceActivity::class.java).putExtra("type", t.name)) })
+
+    private fun browse(label: String, mode: String) =
+        box.addView(Ui.button(this, label) { startActivity(android.content.Intent(this, BrowseActivity::class.java).putExtra("mode", mode)) })
+
+    /** Action exécutée par l'accueil de l'application (actualisation, rangées, tuner…). */
+    private fun main(label: String, id: Int) =
+        box.addView(Ui.button(this, label) { MainActivity.runAction(this, id) })
+
     private fun onOff(b: Boolean) = if (b) "activé" else "désactivé"
 
     private fun render() {
         box.removeAllViews()
-        box.addView(TextView(this).apply { text = "Réglages"; textSize = 28f; setTextColor(0xFFFFFFFF.toInt()) })
+        box.addView(TextView(this).apply { text = "⚙ Réglages"; textSize = 28f; setTextColor(0xFFFFFFFF.toInt()) })
+        box.addView(TextView(this).apply {
+            text = "Source affichée : ${Repo.activeSource()?.name ?: "aucune"}  •  ${Repo.sources.size} source(s)"
+            setTextColor(0x99FFFFFF.toInt())
+        })
 
-        title("Démarrage")
+        title("Sources et contenus")
+        go("Mes sources (afficher, actualiser, modifier, supprimer)", SourcesActivity::class.java)
+        add("＋ Ajouter une liste M3U", SourceType.M3U)
+        add("＋ Ajouter un compte Xtream Codes", SourceType.XTREAM)
+        add("＋ Ajouter un portail MAC (Stalker)", SourceType.STALKER)
+        main("＋ Chaînes du téléviseur (TNT, satellite, câble)", MainFragment.A_TUNER)
+        go("Chaînes YouTube Live", YoutubeActivity::class.java)
+        go("Dépôts (installer des listes en un clic)", ReposActivity::class.java)
+        go("Listes gratuites et légales", FreeSearchActivity::class.java)
+        main("Actualiser la source affichée (chaînes et guide)", MainFragment.A_REFRESH)
+
+        title("Chaînes et guide TV")
+        go("Gestionnaire de chaînes (ordre, groupes, noms, logos)", ChannelManagerActivity::class.java)
+        go("Guides TV (EPG automatique et supplémentaire)", EpgActivity::class.java)
+        go("Rechercher une chaîne ou un film", SearchActivity::class.java)
+
+        title("Affichage")
+        go("Guide TV en grille", GuideActivity::class.java)
+        browse("Vue liste", "list")
+        browse("Vue grille", "grid")
+        go("Multi-écran (4 chaînes)", MultiViewActivity::class.java)
         item("Vue à l'ouverture : ${views.first { it.first == Prefs.startView }.second}") {
             val i = views.indexOfFirst { it.first == Prefs.startView }
             Prefs.startView = views[(i + 1) % views.size].first
         }
+
+        title("Écran d'accueil du téléviseur")
+        main("Rangée Omni IPTV : mettre à jour et explications", MainFragment.A_HOME)
+        main("Ajouter la rangée « En ce moment »", MainFragment.A_HOME_LIVE)
+        main("Publier les chaînes dans l'onglet Direct", MainFragment.A_LIVE_TAB)
+
+        title("Démarrage")
         item("Lancer la dernière chaîne regardée : ${onOff(Prefs.autoPlayLast)}") { Prefs.autoPlayLast = !Prefs.autoPlayLast }
         item("Actualiser la source au démarrage : ${onOff(Prefs.refreshOnStart)}") { Prefs.refreshOnStart = !Prefs.refreshOnStart }
 
@@ -90,6 +135,13 @@ class SettingsActivity : FragmentActivity() {
                 Ui.toast(this, "Échec : ${e.message}")
             }
         }
+        title("Aide")
+        main("Raccourcis de la télécommande et mode d'emploi", MainFragment.A_ABOUT)
+        box.addView(TextView(this).apply {
+            text = "Omni IPTV ${try { packageManager.getPackageInfo(packageName, 0).versionName } catch (e: Exception) { "" }}"
+            setTextColor(0x66FFFFFF.toInt()); setPadding(0, Ui.dp(this@SettingsActivity, 16), 0, 0)
+        })
+        title("Réinitialisation")
         item("Réinitialiser les personnalisations de la source affichée") {
             Repo.activeSourceId?.let { Edits.reset(it) }
             Ui.toast(this, "Personnalisations réinitialisées")

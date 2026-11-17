@@ -11,6 +11,30 @@ import com.elarbi.omniiptv.home.HomeSyncWorker
 import kotlinx.coroutines.launch
 
 class MainActivity : FragmentActivity() {
+    companion object {
+        /** Ouvre l'accueil de l'application et y exécute une action (utilisé par l'écran Réglages). */
+        fun runAction(ctx: android.content.Context, id: Int) {
+            ctx.startActivity(
+                Intent(ctx, MainActivity::class.java).putExtra("action", id)
+                    .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            )
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        val id = intent.getIntExtra("action", 0)
+        if (id != 0) (supportFragmentManager.findFragmentById(R.id.frame) as? MainFragment)?.runAction(id)
+    }
+
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent): Boolean {
+        if (keyCode == android.view.KeyEvent.KEYCODE_MENU || keyCode == android.view.KeyEvent.KEYCODE_SETTINGS) {
+            startActivity(Intent(this, SettingsActivity::class.java))
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_frame)

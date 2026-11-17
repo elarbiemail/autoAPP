@@ -11,6 +11,9 @@ import androidx.tvprovider.media.tv.PreviewProgram
 import androidx.tvprovider.media.tv.TvContractCompat
 import androidx.tvprovider.media.tv.WatchNextProgram
 import com.elarbi.omniiptv.R
+import com.elarbi.omniiptv.data.Edits
+import com.elarbi.omniiptv.data.Library
+import com.elarbi.omniiptv.data.Prefs
 import com.elarbi.omniiptv.data.Repo
 import com.elarbi.omniiptv.model.Channel
 import com.elarbi.omniiptv.ui.Ui
@@ -25,7 +28,7 @@ import androidx.tvprovider.media.tv.Channel as TvChannel
 object HomeScreen {
     const val SLOT_FAV = "fav"
     const val SLOT_LIVE = "live"
-    const val NAME_FAV = "Omni IPTV · Mes chaînes"
+    const val NAME_FAV = "Omni IPTV"
     const val NAME_LIVE = "Omni IPTV · En ce moment"
 
     private fun prefs(ctx: Context) = ctx.getSharedPreferences("home", Context.MODE_PRIVATE)
@@ -70,30 +73,55 @@ object HomeScreen {
         }
     }
 
+    /** Contenu de la rangée principale : reprise, favoris, « À regarder », sinon chaînes de la source. */
+    private fun mainItems(): List<Channel> {
+        val resume = Library.resume.values.toList()
+        val fav = Repo.favorites.values.map { Edits.apply(it) }
+        val watch = Library.watchlist.values.toList()
+        var all = (resume.take(10) + fav + watch).distinctBy { it.key }
+        if (all.size < 6) {
+            val more = Repo.recents.map { Edits.apply(it) } +
+                (Repo.activeSource()?.let { Edits.view(it.id).filter { c -> !c.isVod } } ?: emptyList()).take(30)
+            all = (all + more).distinctBy { it.key }
+        }
+        return all.filter { !Prefs.isLocked(it) && !Prefs.isHiddenAdult(it) }.take(40)
+    }
+
+    private fun program(ctx: Context, channelId: Long, ch: Channel, weight: Int): PreviewProgram {
+        val b = PreviewProgram.Builder()
+            .setChannelId(channelId)
+            .setIntentUri(deepLink(ch))
+            .setInternalProviderId(ch.key)
+            .setWeight(weight)
+        if (ch.isVod) {
+            val p = Library.progress(ch.key)
+            b.setType(if (ch.url.startsWith("xtseries:") || ch.key.contains("|E")) TvContractCompat.PreviewPrograms.TYPE_TV_EPISODE else TvContractCompat.PreviewPrograms.TYPE_MOVIE)
+                .setTitle(ch.name)
+                .setDescription((if (p != null) "Reprendre à $p % · " else "") + ch.group)
+                .setPosterArtUri(poster(ctx, ch))
+                .setPosterArtAspectRatio(TvContractCompat.PreviewPrograms.ASPECT_RATIO_2_3)
+        } else {
+            val (now, next) = Repo.nowNext(ch)
+            val art = try { Posters.make(ctx, ch, now, next) } catch (e: Exception) { poster(ctx, ch) }
+            b.setType(TvContractCompat.PreviewPrograms.TYPE_CHANNEL)
+                .setTitle(now?.title?.ifBlank { null } ?: ch.name)
+                .setDescription(listOfNotNull(ch.name, now?.let { "${Ui.hm(it.start)}–${Ui.hm(it.end)}" }, next?.let { "puis ${it.title}" }).joinToString(" · "))
+                .setPosterArtUri(art)
+                .setPosterArtAspectRatio(TvContractCompat.PreviewPrograms.ASPECT_RATIO_16_9)
+                .setLive(true)
+        }
+        return b.build()
+    }
+
     fun sync(ctx: Context) {
         val cr = ctx.contentResolver
         val favId = ensureChannel(ctx, SLOT_FAV, NAME_FAV, true) ?: return
         try {
+            Posters.cleanup(ctx)
             cr.delete(TvContractCompat.buildPreviewProgramsUriForChannel(favId), null, null)
-            val items = Repo.favorites.values.filter { !it.isVod }.ifEmpty { Repo.recents.filter { !it.isVod } }.take(40)
-            items.forEach { ch ->
-                val (now, next) = Repo.nowNext(ch)
-                val desc = listOfNotNull(
-                    now?.let { "En cours : ${it.title}" },
-                    next?.let { "${Ui.hm(it.start)} ${it.title}" }
-                ).joinToString(" • ").ifBlank { ch.group }
-                val p = PreviewProgram.Builder()
-                    .setChannelId(favId)
-                    .setType(TvContractCompat.PreviewPrograms.TYPE_CHANNEL)
-                    .setTitle(ch.name)
-                    .setDescription(desc)
-                    .setPosterArtUri(poster(ctx, ch))
-                    .setPosterArtAspectRatio(TvContractCompat.PreviewPrograms.ASPECT_RATIO_16_9)
-                    .setIntentUri(deepLink(ch))
-                    .setInternalProviderId(ch.key)
-                    .setLive(true)
-                    .build()
-                cr.insert(TvContractCompat.PreviewPrograms.CONTENT_URI, p.toContentValues())
+            val items = mainItems()
+            items.forEachIndexed { i, ch ->
+                try { cr.insert(TvContractCompat.PreviewPrograms.CONTENT_URI, program(ctx, favId, ch, 1000 - i).toContentValues()) } catch (_: Exception) {}
             }
         } catch (_: Exception) {
         }
@@ -103,23 +131,11 @@ object HomeScreen {
         if (liveId <= 0 || !channelExists(ctx, liveId)) return
         try {
             cr.delete(TvContractCompat.buildPreviewProgramsUriForChannel(liveId), null, null)
-            val pool = (Repo.favorites.values + Repo.recents +
-                (Repo.activeSource()?.let { com.elarbi.omniiptv.data.Edits.view(it.id).take(400) } ?: emptyList()))
-                .filter { !it.isVod }.distinctBy { it.key }
-            pool.mapNotNull { ch -> Repo.nowNext(ch).first?.let { ch to it } }.take(40).forEach { (ch, prog) ->
-                val p = PreviewProgram.Builder()
-                    .setChannelId(liveId)
-                    .setType(TvContractCompat.PreviewPrograms.TYPE_EVENT)
-                    .setTitle(prog.title.ifBlank { ch.name })
-                    .setDescription("${ch.name} • ${Ui.hm(prog.start)}–${Ui.hm(prog.end)}" +
-                        if (prog.desc.isNotBlank()) " • ${prog.desc.take(120)}" else "")
-                    .setPosterArtUri(poster(ctx, ch))
-                    .setPosterArtAspectRatio(TvContractCompat.PreviewPrograms.ASPECT_RATIO_16_9)
-                    .setIntentUri(deepLink(ch))
-                    .setInternalProviderId(ch.key)
-                    .setLive(true)
-                    .build()
-                cr.insert(TvContractCompat.PreviewPrograms.CONTENT_URI, p.toContentValues())
+            val pool = (Repo.favorites.values.map { Edits.apply(it) } + Repo.recents.map { Edits.apply(it) } +
+                (Repo.activeSource()?.let { Edits.view(it.id).take(400) } ?: emptyList()))
+                .filter { !it.isVod && !Prefs.isLocked(it) }.distinctBy { it.key }
+            pool.filter { Repo.nowNext(it).first != null }.take(40).forEachIndexed { i, ch ->
+                try { cr.insert(TvContractCompat.PreviewPrograms.CONTENT_URI, program(ctx, liveId, ch, 1000 - i).toContentValues()) } catch (_: Exception) {}
             }
         } catch (_: Exception) {
         }

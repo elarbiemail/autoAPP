@@ -20,7 +20,7 @@ object Backup {
         Repo.sources.forEach { s ->
             val type = when (s.type) {
                 SourceType.M3U -> "m3u"; SourceType.XTREAM -> "xtream"; SourceType.STALKER -> "stalker"
-                SourceType.YOUTUBE -> return@forEach
+                SourceType.YOUTUBE, SourceType.TUNER -> return@forEach
             }
             if (s.url.startsWith("/")) return@forEach // listes locales non transférables
             items.put(

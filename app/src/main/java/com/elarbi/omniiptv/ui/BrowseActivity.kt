@@ -92,6 +92,7 @@ class BrowseActivity : FragmentActivity() {
         })
         tabsBox.addView(Ui.button(this, "Rechercher", fullWidth = false) { startActivity(Intent(this, SearchActivity::class.java)) })
         tabsBox.addView(Ui.button(this, "Guide TV", fullWidth = false) { startActivity(Intent(this, GuideActivity::class.java)) })
+        tabsBox.addView(Ui.button(this, "⚙ Réglages", fullWidth = false) { startActivity(Intent(this, SettingsActivity::class.java)) })
     }
 
     private fun applyMode() {

@@ -37,6 +37,7 @@ import com.elarbi.omniiptv.data.Library
 import com.elarbi.omniiptv.data.Prefs
 import com.elarbi.omniiptv.data.Repo
 import com.elarbi.omniiptv.data.StreamResolver
+import com.elarbi.omniiptv.data.TunerSource
 import com.elarbi.omniiptv.data.YouTube
 import com.elarbi.omniiptv.home.HomeScreen
 import com.elarbi.omniiptv.home.HomeSyncWorker
@@ -66,6 +67,8 @@ class PlayerActivity : FragmentActivity() {
     private lateinit var numberView: TextView
     private lateinit var statsView: TextView
     private lateinit var rowAdapter: ChannelRowAdapter
+    private lateinit var tvView: android.media.tv.TvView
+    private var tunerFailed = false
 
     private var list: List<Channel> = emptyList()
     private var index = 0
@@ -129,6 +132,26 @@ class PlayerActivity : FragmentActivity() {
         sideTitle = findViewById(R.id.side_title)
         numberView = findViewById(R.id.number)
         statsView = findViewById(R.id.stats)
+        tvView = findViewById(R.id.tv_view)
+        tvView.setCallback(object : android.media.tv.TvView.TvInputCallback() {
+            override fun onVideoAvailable(inputId: String) {
+                tStatus.text = ""
+                scheduleHide()
+            }
+
+            override fun onVideoUnavailable(inputId: String, reason: Int) {
+                tStatus.text = when (reason) {
+                    android.media.tv.TvInputManager.VIDEO_UNAVAILABLE_REASON_TUNING -> "Réglage de la chaîne…"
+                    android.media.tv.TvInputManager.VIDEO_UNAVAILABLE_REASON_WEAK_SIGNAL -> "Signal faible ou absent (antenne / parabole ?)"
+                    android.media.tv.TvInputManager.VIDEO_UNAVAILABLE_REASON_BUFFERING -> "Chargement…"
+                    android.media.tv.TvInputManager.VIDEO_UNAVAILABLE_REASON_AUDIO_ONLY -> "Radio (audio seul)"
+                    else -> "Image indisponible"
+                }
+            }
+
+            override fun onConnectionFailed(inputId: String) = tunerFallback()
+            override fun onDisconnected(inputId: String) = tunerFallback()
+        })
 
         player = PlayerFactory.create(this)
         playerView.player = player
@@ -204,6 +227,15 @@ class PlayerActivity : FragmentActivity() {
             showInfo(ch, "Chaîne verrouillée (contrôle parental).")
             Ui.askPin(this) { playCurrent() }
             return
+        }
+        if (ch.url.startsWith("tuner:")) {
+            playTuner(ch)
+            return
+        }
+        if (tvView.visibility == View.VISIBLE) {
+            tvView.reset()
+            tvView.visibility = View.GONE
+            playerView.visibility = View.VISIBLE
         }
         retried = false
         currentUrl = ""
@@ -298,6 +330,36 @@ class PlayerActivity : FragmentActivity() {
             }
             showInfo(ch, "Lecture impossible (${error.errorCodeName}). Changez de chaîne avec ↑/↓.")
             handler.removeCallbacks(hideInfo)
+        }
+    }
+
+    /** Chaîne du téléviseur (TNT / satellite / câble) jouée dans l'application via TvView. */
+    private fun playTuner(ch: Channel) {
+        val (input, uri) = TunerSource.parse(ch.url) ?: return
+        player.stop()
+        playerView.visibility = View.INVISIBLE
+        tvView.visibility = View.VISIBLE
+        tunerFailed = false
+        showInfo(ch, "Réglage de la chaîne…")
+        lifecycleScope.launch(Dispatchers.IO) { Repo.addRecent(ch) }
+        try {
+            tvView.tune(input, android.net.Uri.parse(uri))
+        } catch (e: Exception) {
+            tunerFallback()
+        }
+    }
+
+    /** Si le téléviseur refuse la lecture dans l'application : ouverture dans l'application TV du système. */
+    private fun tunerFallback() {
+        if (tunerFailed) return
+        tunerFailed = true
+        val ch = list.getOrNull(index) ?: return
+        val (_, uri) = TunerSource.parse(ch.url) ?: return
+        Ui.toast(this, "Le téléviseur réserve ce tuner à son application TV : ouverture de la chaîne…")
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(uri)))
+        } catch (e: Exception) {
+            showInfo(ch, "Impossible d'ouvrir cette chaîne du téléviseur.")
         }
     }
 
@@ -456,6 +518,7 @@ class PlayerActivity : FragmentActivity() {
         if (ch.isVod) items += "Recommencer depuis le début" to { Library.restart(ch.key); player.seekTo(0) }
         if (previousIndex in list.indices) items += "Chaîne précédente : ${list[previousIndex].name}" to { goTo(previousIndex) }
         items += "Liste des chaînes" to { openSide() }
+        items += "⚙ Réglages de l'application" to { startActivity(Intent(this, SettingsActivity::class.java)) }
         val left = if (sleepAt > System.currentTimeMillis()) " (reste ${(sleepAt - System.currentTimeMillis()) / 60000 + 1} min)" else ""
         items += "Minuterie de mise en veille$left" to { sleepMenu() }
         if (packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) {
@@ -780,6 +843,7 @@ class PlayerActivity : FragmentActivity() {
         saveProgress(true)
         super.onStop()
         player.pause()
+        if (tvView.visibility == View.VISIBLE) tvView.reset()
         if (isInPictureInPictureMode) finish()
     }
 

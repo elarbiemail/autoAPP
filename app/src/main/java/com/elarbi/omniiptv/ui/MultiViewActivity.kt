@@ -110,7 +110,7 @@ class MultiViewActivity : FragmentActivity() {
         val fav = Repo.favorites.values.filter { !it.isVod }.map { Edits.apply(it) }
         val src = Repo.activeSource()
         val live = if (src != null) Edits.view(src.id).filter { !it.isVod } else emptyList()
-        return (fav + Repo.playContext.filter { !it.isVod } + live).distinctBy { it.key }.take(1500)
+        return (fav + Repo.playContext.filter { !it.isVod } + live).filter { !it.url.startsWith("tuner:") }.distinctBy { it.key }.take(1500)
     }
 
     private fun chooseChannel() {

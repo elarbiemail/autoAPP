@@ -34,6 +34,7 @@ class GuideActivity : FragmentActivity(), EpgGridView.Listener {
         bar.addView(groupBtn)
         bar.addView(Ui.button(this, "Maintenant", fullWidth = false) { grid.resetTime() })
         bar.addView(Ui.button(this, "Favoris", fullWidth = false) { group = "★ Favoris"; apply() })
+        bar.addView(Ui.button(this, "⚙ Réglages", fullWidth = false) { startActivity(Intent(this, SettingsActivity::class.java)) })
         root.addView(bar)
         details = TextView(this).apply { textSize = 15f; setTextColor(0xFFB0BEC5.toInt()); maxLines = 3; setPadding(0, Ui.dp(this@GuideActivity, 6), 0, Ui.dp(this@GuideActivity, 6)) }
         root.addView(details)

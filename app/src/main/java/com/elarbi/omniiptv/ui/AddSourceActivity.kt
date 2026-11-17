@@ -67,6 +67,7 @@ class AddSourceActivity : FragmentActivity() {
                 help.text = "Adresse du portail (http://portail:port/c/) et adresse MAC enregistrée auprès de votre fournisseur."
                 fUrl.hint = "URL du portail (http://exemple.com:8080/c/)"
             }
+            SourceType.TUNER -> { finish(); return }
             SourceType.YOUTUBE -> {
                 startActivity(android.content.Intent(this, YoutubeActivity::class.java))
                 finish()
