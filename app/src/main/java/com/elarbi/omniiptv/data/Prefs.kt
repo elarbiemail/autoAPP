@@ -36,6 +36,11 @@ object Prefs {
         get() = p.getInt("aspect", 0)
         set(v) = p.edit().putInt("aspect", v).apply()
 
+    /** Interface : auto, tv, phone. */
+    var uiMode: String
+        get() = p.getString("uiMode", "auto") ?: "auto"
+        set(v) = p.edit().putString("uiMode", v).apply()
+
     var showClock: Boolean
         get() = p.getBoolean("showClock", true)
         set(v) = p.edit().putBoolean("showClock", v).apply()

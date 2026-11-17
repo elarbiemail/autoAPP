@@ -167,6 +167,7 @@ class PlayerActivity : FragmentActivity() {
         playerView.resizeMode = resizeMode
         setupGestures()
         addOnPictureInPictureModeChangedListener { info ->
+            if (!info.isInPictureInPictureMode) applyLayout()
             if (info.isInPictureInPictureMode) {
                 this.info.visibility = View.GONE
                 side.visibility = View.GONE
@@ -176,11 +177,13 @@ class PlayerActivity : FragmentActivity() {
 
         rowAdapter = ChannelRowAdapter(this, emptyList())
         sideList.adapter = rowAdapter
+        setupPanel()
         sideList.setOnItemClickListener { _, _, pos, _ ->
             side.visibility = View.GONE
             goTo(pos)
         }
         start(intent)
+        applyLayout()
         handler.post(ticker)
     }
 
@@ -427,6 +430,11 @@ class PlayerActivity : FragmentActivity() {
         else logo.setImageResource(R.drawable.ic_tv)
         if (status != null) tStatus.text = status
         updateTech()
+        updatePanel(ch)
+        if (portraitPhone()) {
+            info.visibility = View.GONE
+            return
+        }
         info.visibility = View.VISIBLE
         scheduleHide()
     }
@@ -477,6 +485,7 @@ class PlayerActivity : FragmentActivity() {
     private fun updateTech() {
         val v = player.videoFormat
         tTech.text = "${quality(v)} · ${codec(v)} · débit ${rate(speedBps)} · qualité $qualityLabel"
+        if (::mpList.isInitialized) findViewById<TextView>(R.id.mp_tech).text = tTech.text
     }
 
     private fun statsText(): String {
@@ -613,38 +622,54 @@ class PlayerActivity : FragmentActivity() {
     private lateinit var audio: AudioManager
     private var gestureValue = -1f
 
-    @SuppressLint("ClickableViewAccessibility")
-    private fun setupGestures() {
-        audio = getSystemService(AUDIO_SERVICE) as AudioManager
-        val minFling = Ui.dp(this, 90)
-        val detector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
-            override fun onDown(e: MotionEvent): Boolean { gestureValue = -1f; return true }
+    private var swipeDone = false
+
+    /** Zapping par glissement : affiche le nom de la chaîne atteinte. */
+    private fun swipeZap(delta: Int) {
+        val ch = list.getOrNull(index) ?: return
+        if (ch.isVod) {
+            // Film : glisser = avancer / reculer de 30 s
+            player.seekTo((player.currentPosition + if (delta > 0) 30_000 else -30_000).coerceAtLeast(0))
+            showGestureText(if (delta > 0) "⏩ +30 s" else "⏪ −30 s")
+            return
+        }
+        if (list.size < 2) return
+        zap(delta)
+        list.getOrNull(index)?.let { showGestureText((if (delta > 0) "▶  " else "◀  ") + "${index + 1}. ${it.name}") }
+    }
+
+    /**
+     * Détecteur de geste : glisser à gauche = chaîne suivante, à droite = précédente
+     * (déclenché dès que le doigt a parcouru assez de distance, même lentement).
+     */
+    private fun gestureDetector(withVerticalControls: Boolean): GestureDetector {
+        val swipeDist = Ui.dp(this, 70)
+        return GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(e: MotionEvent): Boolean { gestureValue = -1f; swipeDone = false; return true }
 
             override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
                 val ch = list.getOrNull(index) ?: return false
                 if (ch.isVod) return false
+                if (portraitPhone()) { showInfo(ch, null); return true }
                 if (info.visibility == View.VISIBLE) info.visibility = View.GONE else showInfo(ch, null)
                 return true
             }
 
-            override fun onDoubleTap(e: MotionEvent): Boolean { options(); return true }
+            override fun onDoubleTap(e: MotionEvent): Boolean {
+                if (portraitPhone() && withVerticalControls) toggleFullscreen() else options()
+                return true
+            }
 
-            override fun onLongPress(e: MotionEvent) { openSide() }
+            override fun onLongPress(e: MotionEvent) { if (!portraitPhone()) openSide() else options() }
 
             override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
+                if (swipeDone) return true
                 val start = e1 ?: return false
                 val dx = e2.x - start.x
                 val dy = e2.y - start.y
-                val ch = list.getOrNull(index) ?: return false
-                if (Math.abs(dx) > Math.abs(dy) * 1.5f && Math.abs(dx) > minFling) {
-                    if (ch.isVod) {
-                        // Film : glisser = avancer / reculer de 30 s
-                        player.seekTo((player.currentPosition + if (dx < 0) 30_000 else -30_000).coerceAtLeast(0))
-                        showGestureText(if (dx < 0) "⏩ +30 s" else "⏪ −30 s")
-                    } else {
-                        // Direct : glisser vers la gauche = chaîne suivante, vers la droite = précédente
-                        zap(if (dx < 0) 1 else -1)
-                    }
+                if (Math.abs(dx) > Math.abs(dy) * 1.3f && Math.abs(dx) > swipeDist / 2) {
+                    swipeDone = true
+                    swipeZap(if (dx < 0) 1 else -1)
                     return true
                 }
                 return false
@@ -652,7 +677,17 @@ class PlayerActivity : FragmentActivity() {
 
             override fun onScroll(e1: MotionEvent?, e2: MotionEvent, distanceX: Float, distanceY: Float): Boolean {
                 val start = e1 ?: return false
-                if (Math.abs(e2.y - start.y) < Math.abs(e2.x - start.x)) return false
+                val dx = e2.x - start.x
+                val dy = e2.y - start.y
+                if (Math.abs(dx) > Math.abs(dy) * 1.3f) {
+                    // Glissement horizontal : zapping dès que la distance est suffisante
+                    if (!swipeDone && Math.abs(dx) > swipeDist) {
+                        swipeDone = true
+                        swipeZap(if (dx < 0) 1 else -1)
+                    }
+                    return true
+                }
+                if (!withVerticalControls || swipeDone) return false
                 val h = playerView.height.coerceAtLeast(1).toFloat()
                 val delta = distanceY / h * 1.5f
                 if (start.x < playerView.width / 2f) {
@@ -674,12 +709,108 @@ class PlayerActivity : FragmentActivity() {
                 return true
             }
         })
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private fun setupGestures() {
+        audio = getSystemService(AUDIO_SERVICE) as AudioManager
+        val detector = gestureDetector(true)
         playerView.setOnTouchListener { v, e ->
             val handled = detector.onTouchEvent(e)
             val vod = list.getOrNull(index)?.isVod == true
             if (vod && !handled) v.onTouchEvent(e)
             true
         }
+        // Bandeau d'informations sous la vidéo (téléphone en portrait) : on peut aussi y glisser pour zapper.
+        val panelDetector = gestureDetector(false)
+        findViewById<View>(R.id.mp_header).setOnTouchListener { _, e -> panelDetector.onTouchEvent(e); true }
+    }
+
+    // ---------------- Téléphone : portrait / plein écran ----------------
+    private val phoneUi by lazy { AppActions.usePhoneUi(this) }
+
+    private fun portraitPhone() = phoneUi &&
+        resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT &&
+        !isInPictureInPictureMode
+
+    private fun applyLayout() {
+        val panel = findViewById<View>(R.id.mobile_panel)
+        val lp = playerView.layoutParams as android.widget.FrameLayout.LayoutParams
+        val insets = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+        if (portraitPhone()) {
+            val h = resources.displayMetrics.widthPixels * 9 / 16
+            lp.height = h
+            lp.gravity = android.view.Gravity.TOP
+            playerView.layoutParams = lp
+            (panel.layoutParams as android.widget.FrameLayout.LayoutParams).topMargin = h
+            panel.requestLayout()
+            panel.visibility = View.VISIBLE
+            info.visibility = View.GONE
+            side.visibility = View.GONE
+            insets.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            mpList.setSelection(index)
+            mpList.setItemChecked(index, true)
+        } else {
+            lp.height = android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+            lp.gravity = android.view.Gravity.NO_GRAVITY
+            playerView.layoutParams = lp
+            panel.visibility = View.GONE
+            if (phoneUi) {
+                insets.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                insets.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            }
+        }
+    }
+
+    private fun toggleFullscreen() {
+        requestedOrientation = if (resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT)
+            android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        else android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        applyLayout()
+        list.getOrNull(index)?.let { updatePanel(it) }
+    }
+
+    private lateinit var mpList: ListView
+
+    private fun setupPanel() {
+        mpList = findViewById(R.id.mp_list)
+        mpList.adapter = rowAdapter
+        mpList.setOnItemClickListener { _, _, pos, _ -> goTo(pos) }
+        findViewById<View>(R.id.mp_fav).setOnClickListener { toggleFav() }
+        findViewById<View>(R.id.mp_quality).setOnClickListener { trackMenu(C.TRACK_TYPE_VIDEO) }
+        findViewById<View>(R.id.mp_options).setOnClickListener { options() }
+        findViewById<View>(R.id.mp_full).setOnClickListener { toggleFullscreen() }
+        findViewById<View>(R.id.mp_pip).setOnClickListener { enterPip() }
+        findViewById<View>(R.id.mp_prev).setOnClickListener { swipeZap(-1) }
+        findViewById<View>(R.id.mp_next).setOnClickListener { swipeZap(1) }
+    }
+
+    private fun updatePanel(ch: Channel) {
+        if (!::mpList.isInitialized) return
+        findViewById<TextView>(R.id.mp_title).text = "${index + 1}. ${ch.name}"
+        val (now, next) = if (ch.isVod) null to null else Repo.nowNext(ch)
+        findViewById<TextView>(R.id.mp_now).text = when {
+            ch.isVod -> Library.progress(ch.key)?.let { "Déjà vu : $it %" } ?: ch.group
+            now != null -> "${Ui.hm(now.start)}–${Ui.hm(now.end)}  ${now.title}"
+            else -> ch.group
+        }
+        findViewById<TextView>(R.id.mp_next_prog).text = next?.let { "Ensuite ${Ui.hm(it.start)}  ${it.title}" } ?: ""
+        val bar = findViewById<ProgressBar>(R.id.mp_progress)
+        if (now != null) {
+            val t = System.currentTimeMillis()
+            bar.progress = (((t - now.start) * 100) / (now.end - now.start).coerceAtLeast(1)).toInt()
+            bar.visibility = View.VISIBLE
+        } else bar.visibility = View.GONE
+        findViewById<TextView>(R.id.mp_fav).text = if (Repo.isFavorite(ch.key)) "★ Favori" else "☆ Favori"
+        findViewById<TextView>(R.id.mp_tech).text = tTech.text
+        val logoView = findViewById<ImageView>(R.id.mp_logo)
+        if (ch.logo.isNotBlank()) Glide.with(this).load(ch.logo).error(R.drawable.ic_tv).into(logoView) else logoView.setImageResource(R.drawable.ic_tv)
+        mpList.setItemChecked(index, true)
+        if (index < mpList.firstVisiblePosition || index > mpList.lastVisiblePosition) mpList.setSelection(index)
     }
 
     private val hideGesture = Runnable { numberView.visibility = View.GONE }
@@ -825,6 +956,10 @@ class PlayerActivity : FragmentActivity() {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
+        if (phoneUi && !portraitPhone() && !isInPictureInPictureMode && side.visibility != View.VISIBLE) {
+            requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            return
+        }
         if (side.visibility == View.VISIBLE) {
             side.visibility = View.GONE
             playerView.requestFocus()

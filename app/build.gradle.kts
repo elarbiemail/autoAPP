@@ -11,8 +11,8 @@ android {
         applicationId = "com.elarbi.omniiptv"
         minSdk = 26
         targetSdk = 34
-        versionCode = 6
-        versionName = "1.0.6"
+        versionCode = 7
+        versionName = "1.0.7"
     }
     buildTypes {
         release {
@@ -37,6 +37,7 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.fragment:fragment-ktx:1.8.2")
     implementation("androidx.leanback:leanback:1.0.0")
+    implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
     implementation("androidx.tvprovider:tvprovider:1.0.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
     implementation("androidx.work:work-runtime-ktx:2.9.1")

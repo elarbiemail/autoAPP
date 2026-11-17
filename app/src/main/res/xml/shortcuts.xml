@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut android:shortcutId="favoris" android:enabled="true" android:icon="@drawable/ic_star"
+        android:shortcutShortLabel="@string/sc_fav" android:shortcutLongLabel="@string/sc_fav">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="com.elarbi.omniiptv"
+            android:targetClass="com.elarbi.omniiptv.ui.MobileActivity" android:data="omniiptv://mobile/fav" />
+    </shortcut>
+    <shortcut android:shortcutId="guide" android:enabled="true" android:icon="@drawable/ic_tv"
+        android:shortcutShortLabel="@string/sc_guide" android:shortcutLongLabel="@string/sc_guide">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="com.elarbi.omniiptv"
+            android:targetClass="com.elarbi.omniiptv.ui.GuideActivity" />
+    </shortcut>
+    <shortcut android:shortcutId="recherche" android:enabled="true" android:icon="@drawable/ic_search"
+        android:shortcutShortLabel="@string/sc_search" android:shortcutLongLabel="@string/sc_search">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="com.elarbi.omniiptv"
+            android:targetClass="com.elarbi.omniiptv.ui.SearchActivity" />
+    </shortcut>
+    <shortcut android:shortcutId="derniere" android:enabled="true" android:icon="@drawable/ic_refresh"
+        android:shortcutShortLabel="@string/sc_last" android:shortcutLongLabel="@string/sc_last">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="com.elarbi.omniiptv"
+            android:targetClass="com.elarbi.omniiptv.ui.MobileActivity" android:data="omniiptv://mobile/last" />
+    </shortcut>
+</shortcuts>

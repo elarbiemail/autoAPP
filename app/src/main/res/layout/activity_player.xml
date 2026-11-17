@@ -17,6 +17,60 @@
         android:layout_height="match_parent"
         android:focusable="true" />
 
+    <!-- Téléphone en portrait : informations, commandes et chaînes sous la vidéo -->
+    <LinearLayout
+        android:id="@+id/mobile_panel"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/bg"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:id="@+id/mp_header"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="#101B2B"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:padding="12dp">
+            <ImageView android:id="@+id/mp_logo" android:layout_width="72dp" android:layout_height="44dp"
+                android:layout_marginEnd="12dp" android:scaleType="fitCenter" />
+            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                android:orientation="vertical">
+                <TextView android:id="@+id/mp_title" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:ellipsize="end" android:maxLines="1" android:textColor="#FFFFFF" android:textSize="18sp" android:textStyle="bold" />
+                <TextView android:id="@+id/mp_now" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:ellipsize="end" android:maxLines="1" android:textColor="#FFFFFF" android:textSize="14sp" />
+                <ProgressBar android:id="@+id/mp_progress" style="?android:attr/progressBarStyleHorizontal"
+                    android:layout_width="match_parent" android:layout_height="4dp" android:layout_marginTop="3dp"
+                    android:max="100" android:progressTint="@color/accent" />
+                <TextView android:id="@+id/mp_next_prog" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:ellipsize="end" android:maxLines="1" android:textColor="@color/hint" android:textSize="13sp" />
+                <TextView android:id="@+id/mp_tech" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:ellipsize="end" android:maxLines="1" android:textColor="#8FD3FF" android:textSize="12sp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <HorizontalScrollView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:background="#101B2B" android:paddingStart="8dp" android:paddingEnd="8dp" android:paddingBottom="8dp"
+            android:scrollbars="none">
+            <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal">
+                <TextView android:id="@+id/mp_prev" style="@style/Chip" android:text="◀ Préc." />
+                <TextView android:id="@+id/mp_next" style="@style/Chip" android:text="Suiv. ▶" />
+                <TextView android:id="@+id/mp_fav" style="@style/Chip" android:text="☆ Favori" />
+                <TextView android:id="@+id/mp_quality" style="@style/Chip" android:text="Qualité" />
+                <TextView android:id="@+id/mp_full" style="@style/Chip" android:text="⛶ Plein écran" />
+                <TextView android:id="@+id/mp_pip" style="@style/Chip" android:text="Réduire" />
+                <TextView android:id="@+id/mp_options" style="@style/Chip" android:text="⋯ Options" />
+            </LinearLayout>
+        </HorizontalScrollView>
+
+        <ListView android:id="@+id/mp_list" android:layout_width="match_parent" android:layout_height="0dp"
+            android:layout_weight="1" android:choiceMode="singleChoice" android:divider="#22FFFFFF"
+            android:dividerHeight="1dp" android:fastScrollEnabled="true" />
+    </LinearLayout>
+
     <!-- Bandeau d'informations -->
     <LinearLayout
         android:id="@+id/info"

@@ -13,6 +13,7 @@ import com.elarbi.omniiptv.data.Edits
 import com.elarbi.omniiptv.data.Prefs
 import com.elarbi.omniiptv.data.Reminders
 import com.elarbi.omniiptv.data.Repo
+import com.elarbi.omniiptv.data.TunerSource
 import com.elarbi.omniiptv.model.SourceType
 
 /** Réglages : démarrage, lecteur, contrôle parental, rappels, sauvegarde. */
@@ -29,7 +30,7 @@ class SettingsActivity : FragmentActivity() {
         val scroll = ScrollView(this)
         box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(Ui.dp(this@SettingsActivity, 64), Ui.dp(this@SettingsActivity, 28), Ui.dp(this@SettingsActivity, 64), Ui.dp(this@SettingsActivity, 28))
+            resources.getDimensionPixelSize(com.elarbi.omniiptv.R.dimen.page_pad).let { pad -> setPadding(pad, Ui.dp(this@SettingsActivity, 20), pad, Ui.dp(this@SettingsActivity, 28)) }
         }
         scroll.addView(box)
         setContentView(scroll)
@@ -53,7 +54,11 @@ class SettingsActivity : FragmentActivity() {
 
     /** Action exécutée par l'accueil de l'application (actualisation, rangées, tuner…). */
     private fun main(label: String, id: Int) =
-        box.addView(Ui.button(this, label) { MainActivity.runAction(this, id) })
+        box.addView(Ui.button(this, label) { AppActions.run(this, id) { tunerPermission.launch(TunerSource.permissions) } })
+
+    private val tunerPermission = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
+    ) { _ -> AppActions.loadTuner(this) }
 
     private fun onOff(b: Boolean) = if (b) "activé" else "désactivé"
 
@@ -86,6 +91,12 @@ class SettingsActivity : FragmentActivity() {
         browse("Vue liste", "list")
         browse("Vue grille", "grid")
         go("Multi-écran (4 chaînes)", MultiViewActivity::class.java)
+        val uiLabels = mapOf("auto" to "automatique", "tv" to "téléviseur", "phone" to "téléphone / tablette")
+        item("Interface : ${uiLabels[Prefs.uiMode]} (redémarre l'application)") {
+            Prefs.uiMode = when (Prefs.uiMode) { "auto" -> "phone"; "phone" -> "tv"; else -> "auto" }
+            startActivity(android.content.Intent(this, MainActivity::class.java)
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK))
+        }
         item("Vue à l'ouverture : ${views.first { it.first == Prefs.startView }.second}") {
             val i = views.indexOfFirst { it.first == Prefs.startView }
             Prefs.startView = views[(i + 1) % views.size].first

@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg"
+    android:orientation="vertical">
+
+    <!-- Barre du haut -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:background="@color/brand"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="16dp"
+        android:paddingEnd="4dp">
+        <TextView android:id="@+id/m_title" android:layout_width="0dp" android:layout_height="match_parent"
+            android:layout_weight="1" android:background="?android:attr/selectableItemBackground" android:ellipsize="end"
+            android:gravity="center_vertical" android:maxLines="1" android:textColor="#FFFFFF" android:textSize="19sp"
+            android:textStyle="bold" />
+        <ImageButton android:id="@+id/m_search" android:layout_width="48dp" android:layout_height="48dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless" android:contentDescription="Rechercher"
+            android:padding="12dp" android:scaleType="fitCenter" android:src="@drawable/ic_search" />
+        <ImageButton android:id="@+id/m_guide" android:layout_width="48dp" android:layout_height="48dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless" android:contentDescription="Guide TV"
+            android:padding="12dp" android:scaleType="fitCenter" android:src="@drawable/ic_tv" />
+        <ImageButton android:id="@+id/m_view" android:layout_width="48dp" android:layout_height="48dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless" android:contentDescription="Changer de vue"
+            android:padding="12dp" android:scaleType="fitCenter" android:src="@drawable/ic_list" />
+    </LinearLayout>
+
+    <EditText
+        android:id="@+id/m_filter"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_margin="8dp"
+        android:backgroundTint="@color/accent"
+        android:hint="Rechercher dans cette liste…"
+        android:imeOptions="actionSearch"
+        android:inputType="text"
+        android:singleLine="true"
+        android:textColor="#FFFFFF"
+        android:textColorHint="@color/hint"
+        android:visibility="gone" />
+
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="8dp"
+        android:paddingTop="6dp"
+        android:paddingEnd="8dp"
+        android:scrollbars="none">
+        <LinearLayout android:id="@+id/m_chips" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:orientation="horizontal" />
+    </HorizontalScrollView>
+
+    <TextView android:id="@+id/m_status" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:paddingStart="16dp" android:paddingTop="4dp" android:paddingEnd="16dp" android:textColor="@color/hint"
+        android:textSize="13sp" />
+
+    <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+        android:id="@+id/m_refresh"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+        <FrameLayout android:layout_width="match_parent" android:layout_height="match_parent">
+            <ListView android:id="@+id/m_list" android:layout_width="match_parent" android:layout_height="match_parent"
+                android:divider="#22FFFFFF" android:dividerHeight="1dp" android:fastScrollEnabled="true" />
+            <GridView android:id="@+id/m_grid" android:layout_width="match_parent" android:layout_height="match_parent"
+                android:columnWidth="112dp" android:horizontalSpacing="8dp" android:numColumns="auto_fit"
+                android:padding="8dp" android:stretchMode="columnWidth" android:verticalSpacing="8dp"
+                android:visibility="gone" />
+            <TextView android:id="@+id/m_empty" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_gravity="center" android:gravity="center" android:padding="32dp" android:textColor="@color/hint"
+                android:textSize="16sp" android:visibility="gone" />
+        </FrameLayout>
+    </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+
+    <!-- Barre de navigation du bas -->
+    <LinearLayout
+        android:id="@+id/m_nav"
+        android:layout_width="match_parent"
+        android:layout_height="60dp"
+        android:background="#101B2B"
+        android:orientation="horizontal" />
+</LinearLayout>

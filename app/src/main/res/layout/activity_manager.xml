@@ -3,9 +3,9 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:paddingStart="40dp"
-    android:paddingTop="20dp"
-    android:paddingEnd="40dp"
+    android:paddingStart="@dimen/page_pad"
+    android:paddingTop="@dimen/page_pad_top"
+    android:paddingEnd="@dimen/page_pad"
     android:paddingBottom="12dp">
 
     <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Gestionnaire de chaînes"
@@ -14,7 +14,8 @@
         android:text="Groupes à gauche (OK : monter, descendre, renommer, masquer) • chaînes à droite (OK : renommer, déplacer, masquer, guide TV, logo)"
         android:textColor="@color/hint" android:textSize="13sp" />
 
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp"
+    <HorizontalScrollView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp">
+        <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
         android:orientation="horizontal">
         <Button android:id="@+id/mg_source" style="@style/Btn" android:text="Source" />
         <Button android:id="@+id/mg_logos" style="@style/Btn" android:text="Compléter les logos" />
@@ -22,6 +23,7 @@
         <Button android:id="@+id/mg_epg" style="@style/Btn" android:text="Guides TV" />
         <Button android:id="@+id/mg_reset" style="@style/Btn" android:text="Réinitialiser" />
     </LinearLayout>
+    </HorizontalScrollView>
 
     <TextView android:id="@+id/mg_status" android:layout_width="wrap_content" android:layout_height="wrap_content"
         android:layout_marginTop="6dp" android:textColor="@color/accent" android:textSize="15sp" />

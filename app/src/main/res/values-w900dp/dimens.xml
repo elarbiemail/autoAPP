@@ -1,0 +1,4 @@
+<resources>
+    <dimen name="page_pad">64dp</dimen>
+    <dimen name="page_pad_top">32dp</dimen>
+</resources>

@@ -1,3 +1,7 @@
 <resources>
     <string name="app_name">Omni IPTV</string>
+    <string name="sc_fav">Favoris</string>
+    <string name="sc_guide">Guide TV</string>
+    <string name="sc_search">Rechercher</string>
+    <string name="sc_last">Dernière chaîne</string>
 </resources>

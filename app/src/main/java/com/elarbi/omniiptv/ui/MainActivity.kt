@@ -37,6 +37,12 @@ class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Téléphone / tablette : interface mobile dédiée.
+        if (AppActions.usePhoneUi(this) && intent?.getIntExtra("action", 0) == 0) {
+            startActivity(Intent(this, MobileActivity::class.java).setData(intent?.data))
+            finish()
+            return
+        }
         setContentView(R.layout.activity_frame)
         if (savedInstanceState == null) {
             supportFragmentManager.beginTransaction().replace(R.id.frame, MainFragment()).commit()
