@@ -34,14 +34,16 @@ object PlayerFactory {
 
     fun play(
         ctx: Context, player: ExoPlayer, url: String, userAgent: String,
-        referer: String = "", forceHls: Boolean = false
+        referer: String = "", forceHls: Boolean = false, headers: Map<String, String> = emptyMap()
     ) {
         val http = DefaultHttpDataSource.Factory()
             .setUserAgent(userAgent)
             .setAllowCrossProtocolRedirects(true)
             .setConnectTimeoutMs(15_000)
             .setReadTimeoutMs(30_000)
-        if (referer.isNotBlank()) http.setDefaultRequestProperties(mapOf("Referer" to referer))
+        val props = HashMap(headers)
+        if (referer.isNotBlank()) props["Referer"] = referer
+        if (props.isNotEmpty()) http.setDefaultRequestProperties(props)
         val dataSource = DefaultDataSource.Factory(ctx, http)
         val extractors = DefaultExtractorsFactory().setTsExtractorFlags(
             DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES or DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS

@@ -270,17 +270,31 @@ class StalkerClient(private val s: Source) {
     /** Lien de lecture temporaire d'une chaîne (type itv) ou d'un film / épisode (type vod). */
     fun createLink(cmd: String, type: String = "itv", series: String = ""): String {
         val direct = clean(cmd)
-        return try {
-            val js = call(
-                "type=$type&action=create_link&cmd=${enc(cmd)}&series=${enc(series)}" +
-                    "&forced_storage=undefined&disable_ad=0&download=0"
-            ) as? JSONObject
-            val c = js?.str("url")?.ifBlank { null } ?: js?.str("cmd").orEmpty()
-            clean(c).ifBlank { direct }
-        } catch (e: Exception) {
-            direct
+        var lastError: Exception? = null
+        for (attempt in 0..1) {
+            try {
+                if (attempt == 1) synchronized(this) { token = "" }   // second essai avec une session neuve
+                val js = call(
+                    "type=$type&action=create_link&cmd=${enc(cmd)}&series=${enc(series)}" +
+                        "&forced_storage=undefined&disable_ad=0&download=0"
+                ) as? JSONObject
+                val c = clean(js?.str("url")?.ifBlank { null } ?: js?.str("cmd").orEmpty())
+                if (c.isNotBlank() && !isPlaceholder(c)) return c
+                val err = js?.str("error").orEmpty()
+                if (err.isNotBlank()) lastError = IOException("Le portail refuse la lecture : $err")
+            } catch (e: Exception) {
+                lastError = e
+            }
         }
+        if (!isPlaceholder(direct) && direct.startsWith("http")) return direct
+        throw IOException(
+            "Le portail n'a pas fourni de lien de lecture pour cette chaîne" +
+                (lastError?.message?.let { " ($it)" } ?: " (chaîne non incluse dans l'abonnement, ou connexion déjà utilisée ailleurs)")
+        )
     }
+
+    /** Commande « fictive » (http://localhost/…) qui ne peut être lue sans create_link. */
+    private fun isPlaceholder(u: String) = u.contains("://localhost") || u.isBlank() || !u.contains("://")
 
     private fun clean(v: String): String {
         val t = stripPrefix(v)
@@ -431,5 +445,41 @@ class StalkerClient(private val s: Source) {
             return@buildString
         }
         try { appendLine(accountInfo()) } catch (e: Exception) { appendLine("Compte : ${e.message}") }
+        // Test de lecture sur la première chaîne
+        try {
+            val ch = channels().firstOrNull() ?: run { appendLine("Chaînes : aucune"); return@buildString }
+            appendLine("Chaînes : ${channels().size} — test sur « ${ch.name} »")
+            appendLine("Commande : ${ch.url.removePrefix("stalker:").take(90)}")
+            val link = createLink(ch.url.removePrefix("stalker:"))
+            appendLine("Lien obtenu : ${link.replace(Regex("(play_token|token)=[^&]+"), "$1=…").take(140)}")
+            appendLine(probe(link))
+        } catch (e: Exception) {
+            appendLine("Test de lecture : ÉCHEC — ${e.message}")
+        }
+    }
+
+    /** Ouvre le lien comme le lecteur (en-têtes MAG) et identifie le format reçu. */
+    private fun probe(link: String): String = try {
+        val h = mapOf(
+            "User-Agent" to MAG_UA, "X-User-Agent" to X_UA,
+            "Cookie" to "mac=${enc(mac)}; stb_lang=fr; timezone=${enc(tz)}"
+        )
+        Http.open(link, h).use { input ->
+            val buf = ByteArray(2048)
+            var n = 0
+            while (n < buf.size) { val r = input.read(buf, n, buf.size - n); if (r <= 0) break; n += r }
+            val head = String(buf, 0, minOf(n, 64), Charsets.ISO_8859_1)
+            val format = when {
+                n >= 189 && buf[0] == 0x47.toByte() && buf[188] == 0x47.toByte() -> "flux MPEG-TS valide"
+                head.startsWith("#EXTM3U") -> "liste HLS (m3u8) valide"
+                head.contains("ftyp") -> "fichier MP4"
+                head.trimStart().startsWith("<") || head.trimStart().startsWith("{") -> "page d'erreur du serveur : " + head.trim().take(60)
+                n == 0 -> "réponse vide"
+                else -> "format inconnu (${n} octets reçus)"
+            }
+            "Test de lecture : réponse reçue — $format"
+        }
+    } catch (e: Exception) {
+        "Test de lecture : ÉCHEC — ${e.message} (lien refusé, expiré, ou serveur de diffusion injoignable)"
     }
 }

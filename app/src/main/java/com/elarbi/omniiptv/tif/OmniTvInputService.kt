@@ -75,7 +75,7 @@ class OmniTvInputService : TvInputService() {
                     } ?: return@launch
                     val ch = withContext(Dispatchers.IO) { Repo.findChannel(key) } ?: return@launch
                     val url = StreamResolver.resolve(ch)
-                    PlayerFactory.play(ctx, player, url, StreamResolver.userAgent(ch), ch.referer, forceHls = YouTube.isYouTube(ch.url))
+                    PlayerFactory.play(ctx, player, url, StreamResolver.userAgent(ch), ch.referer, forceHls = YouTube.isYouTube(ch.url), headers = StreamResolver.headers(ch))
                 } catch (e: Exception) {
                     notifyVideoUnavailable(TvInputManager.VIDEO_UNAVAILABLE_REASON_UNKNOWN)
                 }

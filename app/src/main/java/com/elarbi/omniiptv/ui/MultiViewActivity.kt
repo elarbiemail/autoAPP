@@ -99,7 +99,7 @@ class MultiViewActivity : FragmentActivity() {
         lifecycleScope.launch {
             try {
                 val url = StreamResolver.resolve(ch)
-                PlayerFactory.play(this@MultiViewActivity, p, url, StreamResolver.userAgent(ch), ch.referer, forceHls = YouTube.isYouTube(ch.url))
+                PlayerFactory.play(this@MultiViewActivity, p, url, StreamResolver.userAgent(ch), ch.referer, forceHls = YouTube.isYouTube(ch.url), headers = StreamResolver.headers(ch))
             } catch (e: Exception) {
                 labels[i].text = "${ch.name} — ${e.message}"
             }

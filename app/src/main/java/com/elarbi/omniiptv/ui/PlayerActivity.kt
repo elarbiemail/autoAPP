@@ -248,6 +248,7 @@ class PlayerActivity : FragmentActivity() {
             playerView.visibility = View.VISIBLE
         }
         retried = false
+        reconnects = 0
         currentUrl = ""
         droppedFrames = 0
         speedBps = 0
@@ -272,7 +273,7 @@ class PlayerActivity : FragmentActivity() {
                 currentUrl = url
                 PlayerFactory.play(
                     this@PlayerActivity, player, url, StreamResolver.userAgent(ch), ch.referer,
-                    forceHls = YouTube.isYouTube(ch.url)
+                    forceHls = YouTube.isYouTube(ch.url), headers = StreamResolver.headers(ch)
                 )
                 if (ch.isVod) {
                     val pos = Library.position(ch.key)
@@ -310,7 +311,14 @@ class PlayerActivity : FragmentActivity() {
                 player.prepare()
                 return
             }
-            if (!retried && currentUrl.isNotBlank() && !currentUrl.contains(".m3u8")) {
+            // Portail MAC : le lien est à usage unique → on en redemande un neuf (sans forcer le HLS).
+            if (StreamResolver.isStalker(ch) && reconnects < 3) {
+                reconnects++
+                showInfo(ch, "Nouvel essai avec un lien neuf ($reconnects/3)… (${error.errorCodeName})")
+                handler.postDelayed({ if (list.getOrNull(index)?.key == ch.key) restartStalker(ch) }, 1500L * reconnects)
+                return
+            }
+            if (!retried && !StreamResolver.isStalker(ch) && currentUrl.isNotBlank() && !currentUrl.contains(".m3u8")) {
                 retried = true
                 val alt = if (currentUrl.endsWith(".ts")) currentUrl.removeSuffix(".ts") + ".m3u8" else currentUrl
                 PlayerFactory.play(this@PlayerActivity, player, alt, StreamResolver.userAgent(ch), ch.referer, forceHls = true)
@@ -334,12 +342,14 @@ class PlayerActivity : FragmentActivity() {
                 val url = currentUrl
                 handler.postDelayed({
                     if (list.getOrNull(index)?.key == ch.key) {
-                        PlayerFactory.play(this@PlayerActivity, player, url, StreamResolver.userAgent(ch), ch.referer, forceHls = url.contains(".m3u8"))
+                        PlayerFactory.play(this@PlayerActivity, player, url, StreamResolver.userAgent(ch), ch.referer,
+                            forceHls = url.contains(".m3u8"), headers = StreamResolver.headers(ch))
                     }
                 }, 3000L * reconnects)
                 return
             }
-            showInfo(ch, "Lecture impossible (${error.errorCodeName}). Changez de chaîne avec ↑/↓.")
+            val hint = if (StreamResolver.isStalker(ch)) " Réglages > Mes sources > diagnostic du portail pour le détail." else ""
+            showInfo(ch, "Lecture impossible (${error.errorCodeName}).$hint")
             handler.removeCallbacks(hideInfo)
         }
     }
@@ -371,6 +381,21 @@ class PlayerActivity : FragmentActivity() {
             startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(uri)))
         } catch (e: Exception) {
             showInfo(ch, "Impossible d'ouvrir cette chaîne du téléviseur.")
+        }
+    }
+
+    /** Redemande un lien de lecture au portail MAC et relance la lecture. */
+    private fun restartStalker(ch: Channel) {
+        lifecycleScope.launch {
+            try {
+                val url = StreamResolver.resolve(ch)
+                currentUrl = url
+                PlayerFactory.play(this@PlayerActivity, player, url, StreamResolver.userAgent(ch), ch.referer,
+                    forceHls = url.contains(".m3u8"), headers = StreamResolver.headers(ch))
+            } catch (e: Exception) {
+                showInfo(ch, "Erreur : ${e.message}")
+                handler.removeCallbacks(hideInfo)
+            }
         }
     }
 

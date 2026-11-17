@@ -18,6 +18,18 @@ object StreamResolver {
         }
     }
 
+    /** Portails MAC : en-têtes d'un vrai boîtier MAG aussi pendant la lecture. */
+    fun headers(ch: Channel): Map<String, String> {
+        if (!isStalker(ch)) return emptyMap()
+        val s = Repo.sources.firstOrNull { it.id == ch.sourceId } ?: return emptyMap()
+        val mac = java.net.URLEncoder.encode(s.mac.trim().uppercase(), "UTF-8")
+        val tz = java.net.URLEncoder.encode(java.util.TimeZone.getDefault().id, "UTF-8")
+        return mapOf("Cookie" to "mac=$mac; stb_lang=fr; timezone=$tz", "X-User-Agent" to "Model: MAG250; Link: WiFi")
+    }
+
+    /** Les liens des portails MAC sont à usage unique : il faut en redemander un à chaque essai. */
+    fun isStalker(ch: Channel) = ch.url.startsWith("stalker:") || ch.url.startsWith("stkvod:")
+
     fun userAgent(ch: Channel): String =
         YouTube.userAgentFor(ch.key) ?: ch.userAgent.ifBlank { Repo.sources.firstOrNull { it.id == ch.sourceId }?.userAgent.orEmpty() }
             .ifBlank { Http.DEFAULT_UA }
