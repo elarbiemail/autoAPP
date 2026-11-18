@@ -33,6 +33,7 @@ android {
         }
     }
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -61,6 +62,7 @@ dependencies {
     implementation("androidx.media3:media3-ui:$media3")
     // Décodeur audio FFmpeg (AC3, E-AC3, DTS, MP2, TrueHD…) pour les chaînes dont le son n'est pas lu par le téléviseur.
     implementation("org.jellyfin.media3:media3-ffmpeg-decoder:$media3+2")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.google.code.gson:gson:2.11.0")
