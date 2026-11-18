@@ -115,6 +115,13 @@ class TvHomeActivity : FragmentActivity() {
     // Gestion des listes : sélection mémorisée
     private var mgrSource: String? = null
     private var mgrGroup: String? = null
+    /** Catégorie en cours de déplacement aux flèches : (section, nom). */
+    private var movingGroup: Pair<String, String>? = null
+    /** Après « Placer en tête / en fin » : le curseur reste à cette place. */
+    private var keepGroupIndex: Int? = null
+    private var mgrVisible: List<Pair<String, String>> = emptyList()
+    private var mgrGrpList: ListView? = null
+    private var swallowOkUp = false
 
     private val tunerPermission = registerForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
@@ -715,7 +722,7 @@ class TvHomeActivity : FragmentActivity() {
             override fun onNothingSelected(p: AdapterView<*>?) {}
         }
         catList.setOnItemClickListener { _, _, pos, _ -> cat = cats[pos]; refreshList(); chList.requestFocus() }
-        catList.setOnItemLongClickListener { _, _, pos, _ -> cats[pos].let { c -> if (c.sid != null) groupMenu(c.sid, c.group!!) }; true }
+        catList.setOnItemLongClickListener { _, _, pos, _ -> cats[pos].let { c -> if (c.sid != null) groupMenu(c.sid, c.group!!, "live") }; true }
         chList.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
                 liveShown.getOrNull(pos)?.let { info.show(it); schedulePreview(it) }
@@ -915,7 +922,7 @@ class TvHomeActivity : FragmentActivity() {
             override fun onNothingSelected(p: AdapterView<*>?) {}
         }
         catList.setOnItemClickListener { _, _, pos, _ -> cat = cats[pos]; refresh(); grid.requestFocus() }
-        catList.setOnItemLongClickListener { _, _, pos, _ -> cats[pos].let { c -> if (c.sid != null) groupMenu(c.sid, c.group!!) }; true }
+        catList.setOnItemLongClickListener { _, _, pos, _ -> cats[pos].let { c -> if (c.sid != null) groupMenu(c.sid, c.group!!, tab) }; true }
         grid.setOnItemClickListener { _, _, pos, _ -> shown.getOrNull(pos)?.let { play(it, shown) } }
         grid.setOnItemLongClickListener { _, _, pos, _ -> shown.getOrNull(pos)?.let { itemMenu(it, shown, null) }; true }
         search.addTextChangedListener(watcher { handler.removeCallbacks(run); handler.postDelayed(run, 300) })
@@ -1024,7 +1031,8 @@ class TvHomeActivity : FragmentActivity() {
             val icon = sections.first { it.first == g.tab }.second
             val hidden = if (Edits.isGroupHidden(sid, g.group)) "🚫 " else ""
             val lock = if (g.group in Prefs.lockedGroups) "🔒 " else ""
-            "$icon $hidden$lock${g.group.removePrefix("Films · ").removePrefix("Séries · ")}  (${fmt(g.count)})"
+            val moving = if (movingGroup == g.tab to g.group) "↕  " else ""
+            "$moving$icon $hidden$lock${g.group.removePrefix("Films · ").removePrefix("Séries · ")}  (${fmt(g.count)})"
         }
         val grpFilter = searchField("Filtrer les catégories…")
         val grpList = listView()
@@ -1033,6 +1041,7 @@ class TvHomeActivity : FragmentActivity() {
             val q = EpgNorm.norm(grpFilter.text.toString())
             val pairs = groups.indices.filter { q.isEmpty() || EpgNorm.norm(groupLabels[it]).contains(q) }
             visibleGroups = pairs.map { groups[it] }
+            mgrVisible = visibleGroups.map { it.tab to it.group }
             grpList.adapter = ArrayAdapter(this, R.layout.item_text, pairs.map { groupLabels[it] })
         }
         fillGroups()
@@ -1066,16 +1075,93 @@ class TvHomeActivity : FragmentActivity() {
             }
             override fun onNothingSelected(p: AdapterView<*>?) {}
         }
-        grpList.setOnItemClickListener { _, _, pos, _ -> visibleGroups.getOrNull(pos)?.let { g -> mgrGroup = g.group; fillChannels(g); groupMenu(sid, g.group) } }
+        grpList.setOnItemClickListener { _, _, pos, _ ->
+            if (movingGroup != null) return@setOnItemClickListener
+            visibleGroups.getOrNull(pos)?.let { g -> mgrGroup = g.group; fillChannels(g); groupMenu(sid, g.group, g.tab) }
+        }
         chList.setOnItemClickListener { _, _, pos, _ -> chans.getOrNull(pos)?.let { managerChannelMenu(it, chans) } }
         chList.setOnItemLongClickListener { _, _, pos, _ -> chans.getOrNull(pos)?.let { managerChannelMenu(it, chans) }; true }
         grpFilter.addTextChangedListener(watcher { fillGroups() })
         leftTo(chList, { grpList })
-        leftTo(grpList, { srcList })
         leftTo(srcList, { toRail() })
-        val start = visibleGroups.indexOfFirst { it.group == mgrGroup }.coerceAtLeast(0)
-        visibleGroups.getOrNull(start)?.let { fillChannels(it); grpList.setSelection(start) } ?: fillChannels(null)
+        // Catégories : touche gauche → sources ; en mode déplacement, ↑/↓ déplacent la catégorie, OK termine.
+        grpList.setOnKeyListener { _, code, ev ->
+            val ok = code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER
+            if (ev.action == KeyEvent.ACTION_UP) {
+                if (ok && swallowOkUp) { swallowOkUp = false; return@setOnKeyListener true }
+                return@setOnKeyListener movingGroup != null
+            }
+            val mg = movingGroup
+            when {
+                mg != null -> {
+                    when (code) {
+                        KeyEvent.KEYCODE_DPAD_UP -> moveGroupInTab(sid, mg.first, mg.second, -1)
+                        KeyEvent.KEYCODE_DPAD_DOWN -> moveGroupInTab(sid, mg.first, mg.second, 1)
+                        KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_BACK,
+                        KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                            if (ok) swallowOkUp = true
+                            movingGroup = null
+                            mgrGroup = mg.second
+                            refreshManager()
+                            Ui.toast(this, "Ordre des catégories enregistré")
+                        }
+                    }
+                    true
+                }
+                code == KeyEvent.KEYCODE_DPAD_LEFT -> { srcList.requestFocus(); true }
+                else -> false
+            }
+        }
+        mgrGrpList = grpList
+        val mg = movingGroup
+        val start = keepGroupIndex?.coerceIn(0, (visibleGroups.size - 1).coerceAtLeast(0))
+            ?: (if (mg != null) visibleGroups.indexOfFirst { it.tab == mg.first && it.group == mg.second }
+                else visibleGroups.indexOfFirst { it.group == mgrGroup }).coerceAtLeast(0)
+        keepGroupIndex = null
+        visibleGroups.getOrNull(start)?.let { mgrGroup = it.group; fillChannels(it); grpList.setSelection(start) } ?: fillChannels(null)
+        if (mg != null) status.text = "↕ Déplacement de « ${mg.second} » : ↑ / ↓ pour déplacer, OK pour terminer"
         return row
+    }
+
+    /** Ordre actuel des catégories d'une source (d'après la liste en mémoire, déjà triée). */
+    private fun orderOf(sid: String): List<String> =
+        (fullCache[sid] ?: viewCache[sid] ?: emptyList()).asSequence().map { it.group }.distinct().toList()
+
+    /**
+     * Déplace une catégorie parmi celles de sa section (Direct, Films ou Séries), sans recalculer toute la liste :
+     * l'ordre est enregistré et les listes en mémoire sont simplement retriées.
+     */
+    private fun moveGroupInTab(sid: String, tab: String, g: String, delta: Int) {
+        val inTabOrder = (fullCache[sid] ?: viewCache[sid] ?: emptyList()).asSequence()
+            .filter { inTab(tab, it) }.map { it.group }.distinct().toList()
+        val i = inTabOrder.indexOf(g)
+        if (i < 0) return
+        val j = (i + delta).coerceIn(0, inTabOrder.size - 1)
+        if (i == j) return
+        val global = orderOf(sid).toMutableList()
+        val anchor = inTabOrder[j]
+        global.remove(g)
+        val ai = global.indexOf(anchor)
+        if (ai < 0) return
+        global.add(if (delta < 0) ai else ai + 1, g)
+        Edits.setGroupOrder(sid, global)
+        reorderCached(sid, global)
+        refreshManager()
+    }
+
+    private fun reorderCached(sid: String, order: List<String>) {
+        val idx = HashMap<String, Int>(order.size * 2)
+        order.forEachIndexed { n, g -> idx[g] = n }
+        fullCache[sid]?.let { l -> fullCache[sid] = l.sortedBy { idx[it.group] ?: Int.MAX_VALUE } }
+        viewCache[sid]?.let { l -> viewCache[sid] = l.sortedBy { idx[it.group] ?: Int.MAX_VALUE } }
+    }
+
+    /** Réaffiche la section sans recharger les listes, en gardant le curseur sur les catégories. */
+    private fun refreshManager() {
+        builtVersion = Repo.version
+        val inGroups = sec == Sec.LISTS
+        show(sec)
+        if (inGroups) handler.post { mgrGrpList?.requestFocus() } else focusContent()
     }
 
     /** Réaffiche après une modification ; [sid] : source dont la liste personnalisée a changé. */
@@ -1089,16 +1175,31 @@ class TvHomeActivity : FragmentActivity() {
     }
 
     /** Options d'une catégorie (masquer, renommer, ordre, verrou, favoris). */
-    private fun groupMenu(sid: String, g: String) {
+    private fun groupMenu(sid: String, g: String, tab: String = "live") {
         val opts = ArrayList<Pair<String, () -> Unit>>()
         val hidden = Edits.isGroupHidden(sid, g)
         opts += (if (hidden) "👁 Afficher la catégorie" else "🚫 Masquer la catégorie") to { Edits.toggleGroupHidden(sid, g); invalidate(sid) }
         opts += "✎ Renommer la catégorie" to {
             askText("Renommer « $g »", g) { n -> Edits.renameGroup(sid, g, n); mgrGroup = n; invalidate(sid) }
         }
-        opts += "↑ Monter la catégorie" to { Edits.moveGroup(sid, g, -1); invalidate(sid) }
-        opts += "↓ Descendre la catégorie" to { Edits.moveGroup(sid, g, 1); invalidate(sid) }
-        opts += "⇈ Placer en tête" to { Edits.moveGroup(sid, g, -10_000); invalidate(sid) }
+        opts += "↕ Déplacer avec les flèches (OK pour terminer)" to {
+            movingGroup = tab to g
+            mgrSource = sid
+            mgrGroup = g
+            if (sec != Sec.LISTS) show(Sec.LISTS)
+            refreshManager()
+        }
+        opts += "↑ Monter d'un cran" to { mgrGroup = g; moveGroupInTab(sid, tab, g, -1) }
+        opts += "↓ Descendre d'un cran" to { mgrGroup = g; moveGroupInTab(sid, tab, g, 1) }
+        // Le curseur reste à la même place : on peut envoyer les catégories voisines l'une après l'autre.
+        opts += "⇈ Placer en tête (le curseur reste ici)" to {
+            keepGroupIndex = mgrVisible.indexOf(tab to g).takeIf { it >= 0 }
+            moveGroupInTab(sid, tab, g, -100_000)
+        }
+        opts += "⇊ Placer en fin (le curseur reste ici)" to {
+            keepGroupIndex = mgrVisible.indexOf(tab to g).takeIf { it >= 0 }
+            moveGroupInTab(sid, tab, g, 100_000)
+        }
         val locked = g in Prefs.lockedGroups
         opts += (if (locked) "🔓 Déverrouiller (code parental)" else "🔒 Verrouiller (code parental)") to {
             fun go() {

@@ -154,6 +154,19 @@ object Edits {
         save(sid)
     }
 
+    /** Ordre des catégories tel qu'enregistré (vide si jamais modifié). */
+    fun groupOrder(sid: String): List<String> = synchronized(this) { of(sid).groupOrder.toList() }
+
+    /** Enregistre directement un nouvel ordre de catégories (sans recalculer toute la liste). */
+    fun setGroupOrder(sid: String, order: List<String>) {
+        synchronized(this) {
+            val se = of(sid)
+            se.groupOrder.clear()
+            se.groupOrder.addAll(order)
+        }
+        save(sid)
+    }
+
     fun renameGroup(sid: String, old: String, new: String) {
         val members = view(sid, true).filter { it.group == old }
         synchronized(this) {

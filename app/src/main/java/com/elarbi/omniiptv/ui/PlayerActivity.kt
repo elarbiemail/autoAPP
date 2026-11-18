@@ -78,6 +78,17 @@ class PlayerActivity : FragmentActivity() {
     private var previousIndex = -1
     private var currentUrl = ""
     private var retried = false
+    /** Relances automatiques consécutives sans lecture stable. */
+    private var liveRetries = 0
+    private var pendingReconnect = false
+    /** Méthode de lien (portail MAC) utilisée pour la lecture en cours. */
+    private var lastAttempt = 0
+    private val stallRun = Runnable {
+        val ch = list.getOrNull(index)
+        if (ch != null && player.playbackState == Player.STATE_BUFFERING && player.playWhenReady)
+            reconnect(ch, if (ch.isVod) "plus de données depuis 30 s" else "plus d'images depuis 15 s")
+    }
+    private val stableRun = Runnable { if (player.playbackState == Player.STATE_READY) liveRetries = 0 }
     private var longPressed = false
     private var job: Job? = null
     private val handler = Handler(Looper.getMainLooper())
@@ -112,7 +123,7 @@ class PlayerActivity : FragmentActivity() {
             if (showStats) statsView.text = statsText()
             saveProgress(false)
             watchdogTick++
-            if (watchdogTick % 120 == 0) list.getOrNull(index)?.let { ch ->
+            if (watchdogTick % 60 == 0) list.getOrNull(index)?.let { ch ->
                 if (ch.url.startsWith("stalker:") || ch.url.startsWith("stkvod:")) {
                     lifecycleScope.launch(Dispatchers.IO) { try { Repo.stalker(ch.sourceId).watchdog() } catch (_: Exception) {} }
                 }
@@ -275,6 +286,12 @@ class PlayerActivity : FragmentActivity() {
         }
         retried = false
         reconnects = 0
+        liveRetries = 0
+        pendingReconnect = false
+        handler.removeCallbacks(stallRun)
+        if (ch.url.startsWith("stalker:")) lifecycleScope.launch(Dispatchers.IO) {
+            try { Repo.stalker(ch.sourceId).watchdog() } catch (_: Throwable) {}
+        }
         stalkerHls = false
         currentUrl = ""
         droppedFrames = 0
@@ -299,12 +316,14 @@ class PlayerActivity : FragmentActivity() {
             try {
                 val replay = overrideUrl
                 overrideUrl = null
-                val url = replay ?: StreamResolver.resolve(ch)
+                val attempt = if (StreamResolver.isStalker(ch)) goodAttempt[ch.sourceId] ?: 0 else 0
+                lastAttempt = attempt
+                val url = replay ?: StreamResolver.resolve(ch, attempt)
                 if (replay != null) tStatus.text = "Replay : ${overrideTitle.orEmpty()}"
                 currentUrl = url
                 PlayerFactory.play(
                     this@PlayerActivity, player, url, StreamResolver.userAgent(ch), ch.referer,
-                    forceHls = YouTube.isYouTube(ch.url), headers = StreamResolver.headers(ch)
+                    forceHls = YouTube.isYouTube(ch.url) || StreamResolver.looksHls(url), headers = StreamResolver.headers(ch, attempt)
                 )
                 if (ch.isVod) {
                     val pos = Library.position(ch.key)
@@ -341,10 +360,28 @@ class PlayerActivity : FragmentActivity() {
 
         override fun onPlaybackStateChanged(state: Int) {
             when (state) {
-                Player.STATE_READY -> { reconnects = 0; if (tStatus.text.startsWith("Chargement") || tStatus.text.startsWith("Connexion")) tStatus.text = ""; scheduleHide() }
-                Player.STATE_BUFFERING -> tStatus.text = "Chargement…"
-                Player.STATE_ENDED -> onEnded()
-                else -> {}
+                Player.STATE_READY -> {
+                    reconnects = 0
+                    handler.removeCallbacks(stallRun)
+                    list.getOrNull(index)?.let { c -> if (StreamResolver.isStalker(c)) goodAttempt[c.sourceId] = lastAttempt }
+                    // Lecture stable pendant 20 s : le compteur de relances repart à zéro.
+                    handler.removeCallbacks(stableRun); handler.postDelayed(stableRun, 20_000)
+                    if (tStatus.text.startsWith("Chargement") || tStatus.text.startsWith("Connexion") || tStatus.text.startsWith("Reconnexion")) tStatus.text = ""
+                    scheduleHide()
+                }
+                Player.STATE_BUFFERING -> {
+                    tStatus.text = "Chargement…"
+                    // Flux figé (le serveur n'envoie plus rien sans couper) : relance après 15 s (30 s pour un film).
+                    handler.removeCallbacks(stallRun)
+                    handler.postDelayed(stallRun, if (list.getOrNull(index)?.isVod == true) 30_000L else 15_000L)
+                }
+                Player.STATE_ENDED -> {
+                    handler.removeCallbacks(stallRun)
+                    val c = list.getOrNull(index)
+                    // Un direct n'a pas de fin : si le serveur ferme le flux, on le relance.
+                    if (c != null && !c.isVod) reconnect(c, "le serveur a fermé le flux") else onEnded()
+                }
+                else -> handler.removeCallbacks(stallRun)
             }
         }
 
@@ -355,14 +392,11 @@ class PlayerActivity : FragmentActivity() {
                 player.prepare()
                 return
             }
-            // Portail MAC : le lien est à usage unique → on en redemande un neuf (sans forcer le HLS).
-            if (StreamResolver.isStalker(ch) && reconnects < 6) {
-                reconnects++
-                // Format non reconnu : on alterne HLS / MPEG-TS au prochain essai.
+            handler.removeCallbacks(stallRun)
+            // Portail MAC : relance avec un lien neuf, en alternant HLS / MPEG-TS si le format n'est pas reconnu.
+            if (StreamResolver.isStalker(ch)) {
                 if (isFormatError(error)) stalkerHls = !stalkerHls
-                showInfo(ch, "Essai $reconnects/6 : ${StreamResolver.lastStrategy.ifBlank { "lien neuf" }} a échoué (${explain(error)}). " +
-                    "Nouvel essai (${if (stalkerHls) "HLS" else "TS"})…")
-                handler.postDelayed({ if (list.getOrNull(index)?.key == ch.key) restartStalker(ch) }, 1500L * reconnects)
+                reconnect(ch, explain(error))
                 return
             }
             if (!retried && !StreamResolver.isStalker(ch) && currentUrl.isNotBlank() && !currentUrl.contains(".m3u8")) {
@@ -383,18 +417,7 @@ class PlayerActivity : FragmentActivity() {
                 }
                 return
             }
-            if (Prefs.autoReconnect && reconnects < 5 && currentUrl.isNotBlank()) {
-                reconnects++
-                showInfo(ch, "Coupure du flux : reconnexion automatique ($reconnects/5)…")
-                val url = currentUrl
-                handler.postDelayed({
-                    if (list.getOrNull(index)?.key == ch.key) {
-                        PlayerFactory.play(this@PlayerActivity, player, url, StreamResolver.userAgent(ch), ch.referer,
-                            forceHls = url.contains(".m3u8"), headers = StreamResolver.headers(ch))
-                    }
-                }, 3000L * reconnects)
-                return
-            }
+            if (currentUrl.isNotBlank() && Prefs.autoReconnect) { reconnect(ch, explain(error)); return }
             val hint = if (StreamResolver.isStalker(ch)) " Réglages > Mes sources > diagnostic du portail pour le détail." else ""
             showInfo(ch, "Lecture impossible : ${explain(error)}.$hint")
             handler.removeCallbacks(hideInfo)
@@ -475,19 +498,69 @@ class PlayerActivity : FragmentActivity() {
     }
 
     /** Redemande un lien de lecture au portail MAC et relance la lecture. */
-    private fun restartStalker(ch: Channel) {
+    /**
+     * Relance automatique après une coupure : lien neuf, pause courte puis croissante (0,5 s → 5 s),
+     * sans limite tant que le flux finit par repartir (30 échecs d'affilée au plus).
+     * Les films reprennent à la position où ils se sont arrêtés.
+     */
+    private fun reconnect(ch: Channel, reason: String) {
+        if (pendingReconnect) return
+        if (!Prefs.autoReconnect) {
+            showInfo(ch, "Lecture interrompue : $reason. (Reconnexion automatique désactivée dans Réglages > Lecture.)")
+            handler.removeCallbacks(hideInfo)
+            return
+        }
+        if (liveRetries >= 30) {
+            showInfo(ch, "Flux indisponible après 30 relances ($reason). Changez de chaîne ou revenez-y plus tard." +
+                if (StreamResolver.isStalker(ch)) " Sources > portail > diagnostic pour le détail." else "")
+            handler.removeCallbacks(hideInfo)
+            return
+        }
+        liveRetries++
+        pendingReconnect = true
+        val resumeAt = if (ch.isVod) player.currentPosition.takeIf { it > 0 } ?: (Library.position(ch.key) ?: 0L) else -1L
+        val delay = when (liveRetries) { 1 -> 500L; 2 -> 1_500L; 3 -> 3_000L; else -> 5_000L }
+        showInfo(ch, "Reconnexion automatique ($liveRetries)… $reason")
+        tStatus.text = "Reconnexion…"
+        handler.postDelayed({
+            pendingReconnect = false
+            if (list.getOrNull(index)?.key != ch.key || isFinishing ||
+                !lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) return@postDelayed
+            if (StreamResolver.isStalker(ch)) restartStalker(ch, resumeAt) else restartStream(ch, resumeAt)
+        }, delay)
+    }
+
+    /** Relance d'une source ordinaire (Xtream, M3U, YouTube…) : lien résolu à nouveau (jetons à jour). */
+    private fun restartStream(ch: Channel, resumeAt: Long) {
+        lifecycleScope.launch {
+            try {
+                val url = StreamResolver.resolve(ch)
+                currentUrl = url
+                PlayerFactory.play(this@PlayerActivity, player, url, StreamResolver.userAgent(ch), ch.referer,
+                    forceHls = YouTube.isYouTube(ch.url) || StreamResolver.looksHls(url), headers = StreamResolver.headers(ch))
+                if (resumeAt > 0) player.seekTo(resumeAt)
+            } catch (e: Throwable) {
+                reconnect(ch, e.message ?: "erreur réseau")
+            }
+        }
+    }
+
+    private fun restartStalker(ch: Channel, resumeAt: Long = -1L) {
         lifecycleScope.launch {
             try {
                 // Chaque essai change de stratégie (lien temporaire, lien listé, lien construit),
                 // puis d'en-têtes (boîtier MAG complet, puis User-Agent seul).
-                val attempt = reconnects
+                // Méthode qui a marché pour ce portail d'abord ; les relances suivantes essaient les autres.
+                val attempt = (goodAttempt[ch.sourceId] ?: 0) + (liveRetries - 1).coerceAtLeast(0)
+                lastAttempt = attempt
                 val url = StreamResolver.resolve(ch, attempt)
                 currentUrl = url
                 PlayerFactory.play(this@PlayerActivity, player, url, StreamResolver.userAgent(ch), ch.referer,
                     forceHls = stalkerHls || StreamResolver.looksHls(url), headers = StreamResolver.headers(ch, attempt))
-            } catch (e: Exception) {
-                showInfo(ch, "Erreur : ${e.message}")
-                handler.removeCallbacks(hideInfo)
+                if (resumeAt > 0) player.seekTo(resumeAt)
+            } catch (e: Throwable) {
+                // Portail injoignable un instant (réseau, session) : on réessaie plus tard.
+                reconnect(ch, e.message ?: "portail injoignable")
             }
         }
     }
@@ -1232,7 +1305,33 @@ class PlayerActivity : FragmentActivity() {
         super.onBackPressed()
     }
 
+    /** Réseau coupé puis rétabli : relance immédiate de la chaîne. */
+    private var netLost = false
+    private val netCallback = object : android.net.ConnectivityManager.NetworkCallback() {
+        override fun onLost(network: android.net.Network) { netLost = true }
+        override fun onAvailable(network: android.net.Network) {
+            if (!netLost) return
+            netLost = false
+            runOnUiThread {
+                val ch = list.getOrNull(index) ?: return@runOnUiThread
+                if (player.playerError != null || player.playbackState != Player.STATE_READY) {
+                    handler.removeCallbacks(stallRun)
+                    pendingReconnect = false
+                    liveRetries = 0
+                    reconnect(ch, "réseau rétabli")
+                }
+            }
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        try { getSystemService(android.net.ConnectivityManager::class.java)?.registerDefaultNetworkCallback(netCallback) } catch (_: Throwable) {}
+    }
+
     override fun onStop() {
+        handler.removeCallbacks(stallRun)
+        try { getSystemService(android.net.ConnectivityManager::class.java)?.unregisterNetworkCallback(netCallback) } catch (_: Throwable) {}
         saveProgress(true)
         super.onStop()
         player.pause()
@@ -1251,3 +1350,6 @@ class PlayerActivity : FragmentActivity() {
         super.onDestroy()
     }
 }
+
+/** Méthode de lien (portail MAC) qui a fonctionné, par source : réutilisée au démarrage et à chaque relance. */
+private val goodAttempt = java.util.concurrent.ConcurrentHashMap<String, Int>()
