@@ -187,10 +187,11 @@ class MobileActivity : FragmentActivity() {
         val shown = com.elarbi.omniiptv.data.Shown.sources().map { it.id }
         val names = list.map { (if (it.id in shown) "● " else "") + it.name + " — " + it.typeLabel }
         AlertDialog.Builder(this).setTitle("Source à afficher")
-            .setItems((names + "☰ Afficher plusieurs sources…" + "＋ Ajouter une source…").toTypedArray()) { _, w ->
+            .setItems((names + "☰ Afficher plusieurs sources…" + "📺 Envoyer mes sources vers le téléviseur…" + "＋ Ajouter une source…").toTypedArray()) { _, w ->
                 when {
                     w < list.size -> { com.elarbi.omniiptv.data.Shown.showOnly(list[w].id); chip = "Tout"; load() }
                     w == list.size -> SourcePicker.pickSeveral(this) { chip = "Tout"; load() }
+                    w == list.size + 1 -> TransferUi.send(this)
                     else -> startActivity(Intent(this, SettingsActivity::class.java))
                 }
             }.show()

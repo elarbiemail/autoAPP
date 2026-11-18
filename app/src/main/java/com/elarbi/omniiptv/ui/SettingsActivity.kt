@@ -36,6 +36,10 @@ class SettingsActivity : FragmentActivity() {
     private lateinit var cats: ListView
     private lateinit var paneTitle: TextView
     private lateinit var scroll: ScrollView
+    private lateinit var leftPane: LinearLayout
+    private lateinit var rightPane: LinearLayout
+    /** Écran étroit (téléphone) : rubriques puis options, l'un après l'autre. */
+    private var narrow = false
     private var cat = 0
 
     private val categories = listOf(
@@ -51,8 +55,13 @@ class SettingsActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val d = { v: Int -> Ui.dp(this, v) }
-        val root = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(d(28), d(22), d(28), d(16)) }
+        narrow = resources.configuration.screenWidthDp < 720
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            if (narrow) setPadding(d(14), d(14), d(14), d(10)) else setPadding(d(28), d(22), d(28), d(16))
+        }
         val left = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        leftPane = left
         left.addView(TextView(this).apply { text = "⚙ Réglages"; textSize = 28f; setTextColor(Color.WHITE); setTypeface(typeface, Typeface.BOLD) })
         left.addView(TextView(this).apply {
             text = "Omni IPTV ${try { packageManager.getPackageInfo(packageName, 0).versionName } catch (e: Exception) { "" }}"
@@ -66,9 +75,12 @@ class SettingsActivity : FragmentActivity() {
             adapter = ArrayAdapter(this@SettingsActivity, com.elarbi.omniiptv.R.layout.item_text, categories)
         }
         left.addView(cats, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
-        root.addView(left, LinearLayout.LayoutParams(d(310), ViewGroup.LayoutParams.MATCH_PARENT))
+        root.addView(left, if (narrow) LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
+            else LinearLayout.LayoutParams(d(310), ViewGroup.LayoutParams.MATCH_PARENT))
 
-        val right = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(d(30), 0, 0, 0) }
+        val right = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(if (narrow) 0 else d(30), 0, 0, 0) }
+        rightPane = right
+        if (narrow) right.visibility = View.GONE
         paneTitle = TextView(this).apply { textSize = 22f; setTextColor(ThemeManager.accent); setTypeface(typeface, Typeface.BOLD); setPadding(0, d(6), 0, d(10)) }
         right.addView(paneTitle)
         scroll = ScrollView(this)
@@ -81,11 +93,16 @@ class SettingsActivity : FragmentActivity() {
         cat = intent.getIntExtra("cat", 0).coerceIn(0, categories.size - 1)
         cats.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                if (pos != cat) { cat = pos; render() }
+                if (!narrow && pos != cat) { cat = pos; render() }
             }
             override fun onNothingSelected(p: AdapterView<*>?) {}
         }
-        cats.setOnItemClickListener { _, _, pos, _ -> cat = pos; render(); box.getChildAt(0)?.let { if (!it.isFocusable) box.getChildAt(1) else it }?.requestFocus() }
+        cats.setOnItemClickListener { _, _, pos, _ ->
+            cat = pos; render()
+            if (narrow) { leftPane.visibility = View.GONE; rightPane.visibility = View.VISIBLE; scroll.scrollTo(0, 0) }
+            box.getChildAt(0)?.let { if (!it.isFocusable) box.getChildAt(1) else it }?.requestFocus()
+        }
+        if (narrow) paneTitle.setOnClickListener { showCategories() }
         cats.setItemChecked(cat, true)
         cats.setSelection(cat)
         render()
@@ -94,6 +111,18 @@ class SettingsActivity : FragmentActivity() {
     override fun onResume() {
         super.onResume()
         render()
+    }
+
+    private fun showCategories() {
+        rightPane.visibility = View.GONE
+        leftPane.visibility = View.VISIBLE
+        cats.requestFocus()
+    }
+
+    @Deprecated("Retour : des options vers les rubriques sur téléphone")
+    override fun onBackPressed() {
+        if (narrow && rightPane.visibility == View.VISIBLE) { showCategories(); return }
+        @Suppress("DEPRECATION") super.onBackPressed()
     }
 
     // ---------------- Lignes d'options ----------------
@@ -154,7 +183,7 @@ class SettingsActivity : FragmentActivity() {
     // ---------------- Rubriques ----------------
     private fun render() {
         box.removeAllViews()
-        paneTitle.text = categories[cat].substringAfter("  ")
+        paneTitle.text = (if (narrow) "‹  " else "") + categories[cat].substringAfter("  ")
         when (cat) {
             0 -> sources()
             1 -> lists()
@@ -175,6 +204,8 @@ class SettingsActivity : FragmentActivity() {
         link("＋ Compte Xtream Codes") { add(SourceType.XTREAM) }
         link("＋ Liste M3U / M3U8") { add(SourceType.M3U) }
         link("✎ Modifier un serveur", "Adresse, identifiants, adresse MAC, modèle de boîtier") { SourcePicker.editOne(this) }
+        link("📺 Envoyer mes sources vers le téléviseur", "Depuis ce téléphone, sur le même réseau Wi-Fi (code affiché par le téléviseur)") { TransferUi.send(this) }
+        link("📲 Recevoir des sources d'un autre appareil", "Le téléviseur affiche un code ; le téléphone envoie ses sources") { TransferUi.receive(this) { render() } }
         link("Chaînes YouTube Live") { go(YoutubeActivity::class.java) }
         link("Chaînes du téléviseur", "TNT, satellite, câble enregistrées sur le téléviseur") { main(MainFragment.A_TUNER) }
         link("Entrées du téléviseur", "HDMI, antenne, satellite…") { tvInputs() }

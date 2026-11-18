@@ -637,6 +637,7 @@ class TvHomeActivity : FragmentActivity() {
         r.addView(Ui.button(this@TvHomeActivity, "📡 Portail MAC (Stalker)", false) { addSource(SourceType.STALKER) })
         r.addView(Ui.button(this@TvHomeActivity, "🔑 Compte Xtream", false) { addSource(SourceType.XTREAM) })
         r.addView(Ui.button(this@TvHomeActivity, "📄 Liste M3U", false) { addSource(SourceType.M3U) })
+        r.addView(Ui.button(this@TvHomeActivity, "📲 Depuis le téléphone", false) { receiveFromPhone() })
         r.addView(Ui.button(this@TvHomeActivity, "Plus…", false) { addSourceDialog() })
         addView(r)
     }
@@ -1254,6 +1255,7 @@ class TvHomeActivity : FragmentActivity() {
     // ======================================================================
     private fun buildSources(): View {
         chip("＋ Ajouter une source", false) { addSourceDialog() }
+        chip("📲 Recevoir du téléphone", false) { receiveFromPhone() }
         chip("⟳ Tout actualiser", false) { refreshAll(onlyShown = false) }
         chip("🧹 Libérer de l'espace", false) { freeSpace() }
         chip("Dépôts", false) { startActivity(Intent(this, ReposActivity::class.java)) }
@@ -1369,6 +1371,7 @@ class TvHomeActivity : FragmentActivity() {
             "📡 Portail MAC (Stalker / Ministra)" to { addSource(SourceType.STALKER) },
             "🔑 Compte Xtream Codes" to { addSource(SourceType.XTREAM) },
             "📄 Liste M3U / M3U8 (adresse ou fichier)" to { addSource(SourceType.M3U) },
+            "📲 Depuis le téléphone (sans taper les adresses)" to { receiveFromPhone() },
             "▶ Chaînes YouTube Live" to { startActivity(Intent(this, YoutubeActivity::class.java)) },
             "📺 Chaînes du téléviseur (TNT, satellite, câble)" to {
                 AppActions.run(this, MainFragment.A_TUNER) { tunerPermission.launch(TunerSource.permissions) }
@@ -1377,6 +1380,13 @@ class TvHomeActivity : FragmentActivity() {
             "🌐 Listes gratuites et légales" to { startActivity(Intent(this, FreeSearchActivity::class.java)) }
         )
         menu("Ajouter une source", opts)
+    }
+
+    /** Sources envoyées par le téléphone sur le réseau local ; les nouvelles sont chargées aussitôt. */
+    private fun receiveFromPhone() {
+        TransferUi.receive(this) { fresh ->
+            if (fresh.isNotEmpty()) refreshSources(fresh) else invalidate()
+        }
     }
 
     private fun addSource(t: SourceType) =
