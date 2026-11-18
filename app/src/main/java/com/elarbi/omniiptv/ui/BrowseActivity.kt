@@ -145,6 +145,10 @@ class BrowseActivity : FragmentActivity() {
                 Prefs.browseSource = if (w == 0) "" else list[w - 1].id
                 group = null
                 load()
+            }
+            .setNeutralButton("✎ Modifier un serveur") { _, _ ->
+                val id = sourceId()
+                if (id != null) SourcePicker.edit(this, id) else SourcePicker.editOne(this)
             }.show()
     }
 

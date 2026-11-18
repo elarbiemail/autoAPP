@@ -47,8 +47,6 @@ object PlayerFactory {
         val props = HashMap(headers)
         if (referer.isNotBlank()) props["Referer"] = referer
         if (props.isNotEmpty()) http.setDefaultRequestProperties(props)
-        // Redirections mémorisées : indispensable pour les liens à usage unique des portails MAC (HLS en direct).
-        val dataSource = StickyRedirectDataSource.Factory(DefaultDataSource.Factory(ctx, http))
         val extractors = DefaultExtractorsFactory().setTsExtractorFlags(
             DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES or DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS
         )
@@ -59,6 +57,12 @@ object PlayerFactory {
             l.contains(".ism") -> MimeTypes.APPLICATION_SS
             else -> null
         }
+        // Redirections mémorisées : seulement pour le HLS des portails MAC (rechargements de la playlist
+        // derrière un lien à usage unique). Partout ailleurs, lecture directe sans intermédiaire.
+        val portal = headers.containsKey("X-User-Agent")
+        val base = DefaultDataSource.Factory(ctx, http)
+        val dataSource: androidx.media3.datasource.DataSource.Factory =
+            if (portal && mime == MimeTypes.APPLICATION_M3U8) StickyRedirectDataSource.Factory(base) else base
         val builder = MediaItem.Builder().setUri(url)
             .setLiveConfiguration(MediaItem.LiveConfiguration.Builder().setTargetOffsetMs(8_000).build())
         if (mime != null) builder.setMimeType(mime)

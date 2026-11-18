@@ -72,6 +72,7 @@ class SettingsActivity : FragmentActivity() {
 
         title("Sources et contenus")
         go("Mes sources (afficher, actualiser, modifier, supprimer)", SourcesActivity::class.java)
+        box.addView(Ui.button(this, "✎ Modifier un serveur (M3U, Xtream, portail MAC)") { SourcePicker.editOne(this) })
         item("Sources affichées : ${com.elarbi.omniiptv.data.Shown.title()}") { SourcePicker.pickSeveral(this) { render() } }
         add("＋ Ajouter une liste M3U", SourceType.M3U)
         add("＋ Ajouter un compte Xtream Codes", SourceType.XTREAM)

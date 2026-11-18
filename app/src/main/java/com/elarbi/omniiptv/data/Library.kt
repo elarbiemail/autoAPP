@@ -48,6 +48,16 @@ object Library {
         file("positions.json").writeText(o.toString())
     }
 
+    /** Remplace les entrées d'une source par leur version à jour (nouveau serveur, nouveaux liens). */
+    @Synchronized
+    fun sync(sourceId: String, byKey: Map<String, Channel>) {
+        var w = false; var r = false
+        for ((k, c) in watchlist.entries.toList()) if (c.sourceId == sourceId) byKey[k]?.let { if (it != c) { watchlist[k] = it; w = true } }
+        for ((k, c) in resume.entries.toList()) if (c.sourceId == sourceId) byKey[k]?.let { if (it != c) { resume[k] = it; r = true } }
+        if (w) write("watchlist.json", watchlist.values)
+        if (r) write("resume.json", resume.values)
+    }
+
     @Synchronized
     fun isWatch(key: String) = watchlist.containsKey(key)
 

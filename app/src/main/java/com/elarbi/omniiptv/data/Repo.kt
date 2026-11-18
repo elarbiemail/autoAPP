@@ -251,6 +251,7 @@ object Repo {
         updateSnapshots(list)
         saveChannels("ch_${s.id}.json", list)
         synchronized(this@Repo) { channelCache[s.id] = list }
+        syncSaved(s.id, list)
         if (autoEpg.isNotBlank()) prefs.edit().putString("autoepg_${s.id}", autoEpg).apply()
         prefs.edit().putLong("lastrefresh_${s.id}", System.currentTimeMillis()).apply()
         bump()
@@ -428,6 +429,38 @@ object Repo {
         while (recents.size > 30) recents.removeAt(recents.size - 1)
         saveChannels("recents.json", recents)
         bump()
+    }
+
+    /** Source modifiée : la liste enregistrée et les favoris prennent aussitôt le nouveau serveur / les nouveaux identifiants. */
+    fun applySourceChange(old: Source, new: Source) {
+        if (old == new) return
+        synchronized(stalkers) { stalkers.remove(new.id) }
+        if (new.type == SourceType.XTREAM && (old.url != new.url || old.username != new.username ||
+                old.password != new.password || old.userAgent != new.userAgent)) {
+            val list = channels(new.id).map { c ->
+                c.copy(url = StreamResolver.xtreamUrl(new.id, c.url), userAgent = new.userAgent)
+            }
+            if (list.isNotEmpty()) commit(new.id, list)
+            syncSaved(new.id, list)
+        }
+        if (new.type == SourceType.STALKER && (old.mac != new.mac || old.url != new.url)) {
+            prefs.edit().remove("vodcounts_${new.id}").apply()
+        }
+    }
+
+    /** Après rechargement (ou modification du serveur) : favoris, récents et bibliothèque reprennent les liens à jour. */
+    fun syncSaved(sourceId: String, list: List<Channel>) {
+        val byKey = list.associateBy { it.key }
+        synchronized(this) {
+            var fav = false
+            for ((k, c) in favorites.entries.toList()) if (c.sourceId == sourceId) byKey[k]?.let { if (it != c) { favorites[k] = it; fav = true } }
+            if (fav) saveChannels("favorites.json", favorites.values)
+            var rec = false
+            for (i in recents.indices) { val c = recents[i]; if (c.sourceId == sourceId) byKey[c.key]?.let { if (it != c) { recents[i] = it; rec = true } } }
+            if (rec) saveChannels("recents.json", recents)
+            playContext = playContext.map { c -> if (c.sourceId == sourceId) byKey[c.key] ?: c else c }
+        }
+        Library.sync(sourceId, byKey)
     }
 
     fun findChannel(key: String): Channel? {

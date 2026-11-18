@@ -88,11 +88,25 @@ class AddSourceActivity : FragmentActivity() {
         }
         findViewById<Button>(R.id.btn_mac).setOnClickListener { fMac.setText(Repo.randomMac()) }
         findViewById<Button>(R.id.btn_cancel).setOnClickListener { finish() }
-        btnSave.setOnClickListener { save() }
+        btnSave.setOnClickListener { save(true) }
+        if (e != null) {
+            // Mode modification : le titre l'indique, et on peut enregistrer sans tout recharger.
+            title.text = "Modifier : ${e.name}"
+            help.text = "${e.typeLabel} — modifiez le serveur, les identifiants, l'adresse MAC ou le nom. " +
+                "La liste enregistrée (${Repo.channels(e.id).size} éléments), les favoris et les reprises sont conservés." +
+                "\n\n" + help.text
+            btnSave.text = "Enregistrer et recharger"
+            val row = btnSave.parent as android.widget.LinearLayout
+            row.addView(Button(this).apply {
+                text = "Enregistrer sans recharger"
+                isAllCaps = false
+                setOnClickListener { save(false) }
+            }, 1)
+        }
         fUrl.requestFocus()
     }
 
-    private fun save() {
+    private fun save(reload: Boolean) {
         var url = fUrl.text.toString().trim()
         var user = fUser.text.toString().trim()
         var pass = fPass.text.toString().trim()
@@ -117,8 +131,14 @@ class AddSourceActivity : FragmentActivity() {
             mac = if (type == SourceType.STALKER) mac else "",
             epgUrl = fEpg.text.toString().trim(), userAgent = fUa.text.toString().trim()
         )
+        val old = editing
         Repo.upsertSource(s)
         Repo.activeSourceId = s.id
+        if (old != null) {
+            // Les liens enregistrés suivent tout de suite le nouveau serveur (favoris, reprises, liste).
+            Repo.applySourceChange(old, s)
+            if (!reload) { Ui.toast(this, "Modifications enregistrées"); finish(); return }
+        }
         status.text = "Chargement des chaînes…"
         btnSave.isEnabled = false
         ProgressUi.run(this, "Chargement de « ${s.name} »", { Repo.refresh(s) }) { r ->
@@ -129,6 +149,7 @@ class AddSourceActivity : FragmentActivity() {
             }.onFailure { e ->
                 status.text = "Source enregistrée, mais le chargement a échoué : ${e.message}"
                 btnSave.isEnabled = true
+                editing = s
             }
         }
     }

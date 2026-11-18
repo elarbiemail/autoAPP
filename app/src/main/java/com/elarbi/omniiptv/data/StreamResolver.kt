@@ -14,8 +14,25 @@ object StreamResolver {
                 Repo.stalker(ch.sourceId).createLink(v.substringAfter(':'), "vod", v.substringBefore(':'))
             }
             YouTube.isYouTube(ch.url) -> YouTube.resolveForChannel(ch.key, ch.url)
-            else -> ch.url
+            else -> current(ch)
         }
+    }
+
+    private val xtreamPath = Regex("^(.*?)/(live|movie|series|timeshift)/([^/]+)/([^/]+)/(.+)$")
+
+    /**
+     * Xtream : le lien est reconstruit avec le serveur et les identifiants actuels de la source,
+     * pour que les chaînes, films et épisodes enregistrés marchent aussitôt après une modification du compte.
+     */
+    fun current(ch: Channel): String = xtreamUrl(ch.sourceId, ch.url)
+
+    fun xtreamUrl(sourceId: String, url: String): String {
+        val s = Repo.sources.firstOrNull { it.id == sourceId && it.type == com.elarbi.omniiptv.model.SourceType.XTREAM } ?: return url
+        val m = xtreamPath.find(url) ?: return url
+        val base = s.url.trim().trimEnd('/').removeSuffix("/player_api.php").removeSuffix("/get.php").trimEnd('/')
+        if (base.isBlank() || s.username.isBlank()) return url
+        val (_, kind, _, _, rest) = m.destructured
+        return "$base/$kind/${s.username}/${s.password}/$rest"
     }
 
     /** Portails MAC : en-têtes d'un vrai boîtier MAG aussi pendant la lecture. */

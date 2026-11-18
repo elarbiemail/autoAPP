@@ -146,7 +146,15 @@ class StalkerClient(private val s: Source) {
             if (m.contains("401") || m.contains("403")) throw AuthExpired()
             throw e
         }
-        input.use {
+        input.use { raw ->
+            // Certains portails écrivent des avertissements PHP avant le JSON : on saute jusqu'au premier « { ».
+            val it = java.io.BufferedInputStream(raw, 65536)
+            it.mark(65536)
+            val head = ByteArray(65536)
+            val n = it.read(head).coerceAtLeast(0)
+            it.reset()
+            val start = (0 until n).firstOrNull { i -> head[i] == '{'.code.toByte() } ?: 0
+            if (start > 0) it.skip(start.toLong())
             val r = JsonStream.reader(it)
             var authFailed = false
             r.beginObject()
