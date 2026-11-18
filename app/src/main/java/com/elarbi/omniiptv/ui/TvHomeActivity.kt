@@ -725,6 +725,8 @@ class TvHomeActivity : FragmentActivity() {
         chList.setOnItemClickListener { _, _, pos, _ -> liveShown.getOrNull(pos)?.let { play(it, liveShown) } }
         chList.setOnItemLongClickListener { _, _, pos, _ -> liveShown.getOrNull(pos)?.let { itemMenu(it, liveShown, null) }; true }
         search.addTextChangedListener(watcher { handler.removeCallbacks(catRun); handler.postDelayed(catRun, 300) })
+        leftTo(chList, { catList })
+        leftTo(catList, { toRail() })
         refreshList()
         liveShown.firstOrNull()?.let { info.show(it) }
         if (all.isEmpty()) info.clear(emptyText("live"))
@@ -910,6 +912,8 @@ class TvHomeActivity : FragmentActivity() {
         grid.setOnItemClickListener { _, _, pos, _ -> shown.getOrNull(pos)?.let { play(it, shown) } }
         grid.setOnItemLongClickListener { _, _, pos, _ -> shown.getOrNull(pos)?.let { itemMenu(it, shown, null) }; true }
         search.addTextChangedListener(watcher { handler.removeCallbacks(run); handler.postDelayed(run, 300) })
+        leftTo(grid, { catList }) { grid.selectedItemPosition <= 0 || grid.selectedItemPosition % grid.numColumns.coerceAtLeast(1) == 0 }
+        leftTo(catList, { toRail() })
         refresh()
         return row
     }
@@ -947,6 +951,7 @@ class TvHomeActivity : FragmentActivity() {
         list.adapter = adapter
         list.setOnItemClickListener { _, _, pos, _ -> items.getOrNull(pos)?.let { play(it, items) } }
         list.setOnItemLongClickListener { _, _, pos, _ -> items.getOrNull(pos)?.let { itemMenu(it, items, cur.id) }; true }
+        leftTo(list, { toRail() })
         box.addView(list, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         return box
     }
@@ -1058,6 +1063,9 @@ class TvHomeActivity : FragmentActivity() {
         chList.setOnItemClickListener { _, _, pos, _ -> chans.getOrNull(pos)?.let { managerChannelMenu(it, chans) } }
         chList.setOnItemLongClickListener { _, _, pos, _ -> chans.getOrNull(pos)?.let { managerChannelMenu(it, chans) }; true }
         grpFilter.addTextChangedListener(watcher { fillGroups() })
+        leftTo(chList, { grpList })
+        leftTo(grpList, { srcList })
+        leftTo(srcList, { toRail() })
         val start = visibleGroups.indexOfFirst { it.group == mgrGroup }.coerceAtLeast(0)
         visibleGroups.getOrNull(start)?.let { fillChannels(it); grpList.setSelection(start) } ?: fillChannels(null)
         return row
@@ -1182,6 +1190,7 @@ class TvHomeActivity : FragmentActivity() {
         }
         list.setOnItemClickListener { _, _, pos, _ -> sourceMenu(sources[pos]) }
         list.setOnItemLongClickListener { _, _, pos, _ -> sourceMenu(sources[pos]); true }
+        leftTo(list, { toRail() })
         return list
     }
 
@@ -1394,6 +1403,17 @@ class TvHomeActivity : FragmentActivity() {
             .setPositiveButton("OK") { _, _ -> e.text.toString().trim().takeIf { it.isNotEmpty() }?.let(ok) }
             .setNegativeButton("Annuler", null).show()
     }
+
+    /** Touche gauche : remonte d'un niveau (chaînes → catégories → barre latérale). */
+    private fun leftTo(v: View, target: () -> View?, atLeftEdge: () -> Boolean = { true }) {
+        v.setOnKeyListener { _, code, ev ->
+            if (code == KeyEvent.KEYCODE_DPAD_LEFT && ev.action == KeyEvent.ACTION_DOWN && atLeftEdge()) {
+                target()?.requestFocus(); true
+            } else false
+        }
+    }
+
+    private fun toRail(): View? = railItems[sec]
 
     private fun listView() = ListView(this).apply {
         divider = null

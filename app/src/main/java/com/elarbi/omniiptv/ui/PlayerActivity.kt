@@ -42,6 +42,8 @@ import com.elarbi.omniiptv.data.YouTube
 import com.elarbi.omniiptv.home.HomeScreen
 import com.elarbi.omniiptv.home.HomeSyncWorker
 import com.elarbi.omniiptv.model.Channel
+import com.elarbi.omniiptv.model.isEpisode
+import com.elarbi.omniiptv.model.isSeries
 import com.elarbi.omniiptv.player.PlayerFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -187,8 +189,17 @@ class PlayerActivity : FragmentActivity() {
         sideList.adapter = rowAdapter
         setupPanel()
         sideList.setOnItemClickListener { _, _, pos, _ ->
-            side.visibility = View.GONE
-            goTo(pos)
+            when {
+                sideGroups -> pickSideGroup(pos)
+                sideItems === list -> { side.visibility = View.GONE; goTo(pos) }
+                else -> playFromOtherCategory(pos)
+            }
+        }
+        // Touche gauche dans la liste : chaînes → catégories → fermeture.
+        sideList.setOnKeyListener { _, code, ev ->
+            if (code != KeyEvent.KEYCODE_DPAD_LEFT || ev.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+            if (sideGroups) { side.visibility = View.GONE; playerView.requestFocus() } else showSideGroups()
+            true
         }
         start(intent)
         applyLayout()
@@ -269,8 +280,12 @@ class PlayerActivity : FragmentActivity() {
         droppedFrames = 0
         speedBps = 0
         qualityLabel = "Auto"
+        audioNotified = false
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
-            .clearOverridesOfType(C.TRACK_TYPE_VIDEO).build()
+            .clearOverridesOfType(C.TRACK_TYPE_VIDEO)
+            .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+            .setPreferredAudioLanguage(Prefs.channelAudio(ch.key).ifBlank { Prefs.audioLang.ifBlank { java.util.Locale.getDefault().language } })
+            .build()
         playerView.useController = ch.isVod
         showInfo(ch, "Connexion…")
         lifecycleScope.launch(Dispatchers.IO) {
@@ -310,7 +325,20 @@ class PlayerActivity : FragmentActivity() {
         }
     }
 
+    private var audioNotified = false
+
     private val listener = object : Player.Listener {
+        override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
+            if (audioNotified) return
+            val langs = audioTracks().mapNotNull { langName(it.second.language) }.distinct()
+            if (langs.size >= 2) {
+                audioNotified = true
+                android.widget.Toast.makeText(this@PlayerActivity,
+                    "🔊 ${langs.size} langues : ${langs.joinToString(", ")} — touche Audio, ou Options > Langue audio",
+                    android.widget.Toast.LENGTH_LONG).show()
+            }
+        }
+
         override fun onPlaybackStateChanged(state: Int) {
             when (state) {
                 Player.STATE_READY -> { reconnects = 0; if (tStatus.text.startsWith("Chargement") || tStatus.text.startsWith("Connexion")) tStatus.text = ""; scheduleHide() }
@@ -610,7 +638,9 @@ class PlayerActivity : FragmentActivity() {
         val ch = list.getOrNull(index) ?: return
         val items = ArrayList<Pair<String, () -> Unit>>()
         items += "Qualité vidéo ($qualityLabel)" to { trackMenu(C.TRACK_TYPE_VIDEO) }
-        items += "Piste audio" to { trackMenu(C.TRACK_TYPE_AUDIO) }
+        val audios = audioTracks()
+        val cur = audios.firstOrNull { it.third }?.second
+        items += "🔊 Langue audio" + (if (audios.size > 1) " (${audios.size} pistes" + (cur?.let { " • " + audioLabel(it) } ?: "") + ")" else "") to { audioMenu() }
         items += "Sous-titres" to { trackMenu(C.TRACK_TYPE_TEXT) }
         items += "Format de l'image" to { aspectMenu() }
         items += (if (showStats) "Masquer les statistiques" else "Afficher vitesse et statistiques") to {
@@ -635,6 +665,68 @@ class PlayerActivity : FragmentActivity() {
             .setTitle(ch.name)
             .setItems(items.map { it.first }.toTypedArray()) { _, w -> items[w].second() }
             .show()
+    }
+
+    /** Pistes audio lisibles du flux : (groupe, format, sélectionnée). */
+    private fun audioTracks(): List<Triple<Pair<androidx.media3.common.Tracks.Group, Int>, Format, Boolean>> {
+        val out = ArrayList<Triple<Pair<androidx.media3.common.Tracks.Group, Int>, Format, Boolean>>()
+        for (g in player.currentTracks.groups) {
+            if (g.type != C.TRACK_TYPE_AUDIO) continue
+            for (i in 0 until g.length) if (g.isTrackSupported(i)) out += Triple(g to i, g.getTrackFormat(i), g.isTrackSelected(i))
+        }
+        return out
+    }
+
+    /** Nom de la langue en français (« fr » → « Français »), null si le flux ne l'indique pas. */
+    private fun langName(code: String?): String? {
+        if (code.isNullOrBlank() || code in setOf("und", "mul", "zxx", "mis", "qaa")) return null
+        val n = java.util.Locale.forLanguageTag(code).getDisplayLanguage(java.util.Locale.FRENCH)
+        return if (n.isBlank() || n.equals(code, true)) code.uppercase() else n.replaceFirstChar { it.uppercase() }
+    }
+
+    private fun audioLabel(f: Format): String {
+        val lang = langName(f.language)
+        val name = f.label?.takeIf { it.isNotBlank() && !it.equals(lang, true) }
+        val ch = when (f.channelCount) { 1 -> "mono"; 2 -> "stéréo"; 6 -> "5.1"; 8 -> "7.1"; else -> if (f.channelCount > 0) "${f.channelCount} canaux" else null }
+        val codecName = when (codec(f)) { "AC3" -> "Dolby Digital"; "E-AC3" -> "Dolby Digital+"; else -> codec(f) }
+        return listOfNotNull(lang ?: name ?: "Langue non indiquée", if (lang != null) name else null, codecName, ch).joinToString(" · ")
+    }
+
+    /** Choix de la langue audio : retenue pour la chaîne ; langue préférée réglable pour toutes. */
+    private fun audioMenu() {
+        val ch = list.getOrNull(index) ?: return
+        val tracks = audioTracks()
+        if (tracks.isEmpty()) { Ui.toast(this, "Aucune piste audio pour le moment (attendez le début de la lecture)."); return }
+        val labels = tracks.mapIndexed { n, t -> (if (t.third) "● " else "    ") + "${n + 1}. " + audioLabel(t.second) }
+        AlertDialog.Builder(this)
+            .setTitle(if (tracks.size > 1) "Langue audio — ${tracks.size} pistes" else "Langue audio (une seule piste)")
+            .setItems(labels.toTypedArray()) { _, w ->
+                val (gi, f, _) = tracks[w]
+                player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
+                    .setOverrideForType(TrackSelectionOverride(gi.first.mediaTrackGroup, gi.second))
+                    .build()
+                // Retenue pour cette chaîne (si le flux indique la langue).
+                f.language?.takeIf { langName(it) != null }?.let { Prefs.setChannelAudio(ch.key, it) }
+                Ui.toast(this, "🔊 ${audioLabel(f)}" + if (langName(f.language) != null) " — retenue pour « ${ch.name} »" else "")
+            }
+            .setNeutralButton("Langue préférée…") { _, _ -> preferredLanguageMenu() }
+            .setNegativeButton("Fermer", null).show()
+    }
+
+    private fun preferredLanguageMenu() {
+        val codes = listOf("", "fr", "ar", "en", "es", "de", "it", "tr", "pt", "nl")
+        val names = codes.map { if (it.isEmpty()) "Langue du téléviseur" else langName(it) ?: it }
+        AlertDialog.Builder(this).setTitle("Langue audio préférée (toutes les chaînes)")
+            .setSingleChoiceItems(names.toTypedArray(), codes.indexOf(Prefs.audioLang).coerceAtLeast(0)) { d, w ->
+                d.dismiss()
+                Prefs.audioLang = codes[w]
+                player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                    .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                    .setPreferredAudioLanguage(codes[w].ifBlank { java.util.Locale.getDefault().language })
+                    .build()
+                Ui.toast(this, "Langue préférée : ${names[w]} (utilisée quand le flux la propose)")
+            }.show()
     }
 
     private fun trackMenu(type: Int) {
@@ -949,8 +1041,75 @@ class PlayerActivity : FragmentActivity() {
         HomeSyncWorker.runNow(this)
     }
 
+    // ---------- Liste latérale : chaînes, puis catégories (touche gauche) ----------
+    private var sideGroups = false
+    private var sideItems: List<Channel> = emptyList()
+    private var sideAll: List<Channel> = emptyList()
+    private var sideGroupNames: List<String> = emptyList()
+    private var sideSource: String? = null
+
+    private fun showSideGroups() {
+        val ch = list.getOrNull(index) ?: return
+        sideTitle.text = "Catégories • chargement…"
+        lifecycleScope.launch {
+            val all = if (sideSource == ch.sourceId && sideAll.isNotEmpty()) sideAll else withContext(Dispatchers.Default) {
+                try {
+                    com.elarbi.omniiptv.data.Edits.view(ch.sourceId)
+                        .filter { it.isVod == ch.isVod && !it.isSeries && !it.isEpisode == !ch.isEpisode }
+                } catch (e: Throwable) { com.elarbi.omniiptv.data.CrashLog.record("Catégories du lecteur", e); emptyList() }
+            }
+            if (side.visibility != View.VISIBLE) return@launch
+            sideAll = all
+            sideSource = ch.sourceId
+            val counts = LinkedHashMap<String, Int>()
+            for (c in all) counts[c.group] = (counts[c.group] ?: 0) + 1
+            if (counts.isEmpty()) counts[ch.group] = list.size
+            sideGroupNames = counts.keys.toList()
+            sideGroups = true
+            sideTitle.text = "Catégories (${counts.size}) • OK : ouvrir • ◀ : fermer"
+            sideList.adapter = android.widget.ArrayAdapter(this@PlayerActivity, R.layout.item_text,
+                counts.map { (g, n) -> "${g.removePrefix("Films · ").removePrefix("Séries · ")}  ($n)" })
+            val cur = sideGroupNames.indexOf(sideTitleGroup ?: ch.group).coerceAtLeast(0)
+            sideList.setSelection(cur)
+            sideList.requestFocus()
+        }
+    }
+
+    private var sideTitleGroup: String? = null
+
+    private fun pickSideGroup(pos: Int) {
+        val g = sideGroupNames.getOrNull(pos) ?: return
+        sideItems = sideAll.filter { it.group == g }.ifEmpty { list }
+        sideGroups = false
+        sideTitleGroup = g
+        sideList.adapter = if (sideItems === list) rowAdapter else ChannelRowAdapter(this, sideItems)
+        sideTitle.text = "$g • ◀ : catégories"
+        val cur = sideItems.indexOfFirst { it.key == list.getOrNull(index)?.key }.coerceAtLeast(0)
+        sideList.setSelection(cur)
+        sideList.requestFocus()
+    }
+
+    /** Chaîne choisie dans une autre catégorie : elle devient la liste de zapping. */
+    private fun playFromOtherCategory(pos: Int) {
+        if (pos !in sideItems.indices) return
+        saveProgress(true)
+        previousIndex = -1
+        list = sideItems
+        Repo.playContext = list
+        rowAdapter.items = list
+        rowAdapter.notifyDataSetChanged()
+        index = pos
+        side.visibility = View.GONE
+        playCurrent()
+    }
+
     private fun openSide() {
-        sideTitle.text = list.getOrNull(index)?.group ?: ""
+        sideGroups = false
+        sideItems = list
+        sideTitleGroup = list.getOrNull(index)?.group
+        sideList.adapter = rowAdapter
+        rowAdapter.items = list
+        sideTitle.text = (list.getOrNull(index)?.group ?: "") + " • ◀ : catégories"
         rowAdapter.notifyDataSetChanged()
         side.visibility = View.VISIBLE
         sideList.setSelection(index)
@@ -1013,6 +1172,7 @@ class PlayerActivity : FragmentActivity() {
             KeyEvent.KEYCODE_CHANNEL_DOWN -> { zap(-1); return true }
             KeyEvent.KEYCODE_LAST_CHANNEL -> { if (previousIndex in list.indices) goTo(previousIndex); return true }
             KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_SETTINGS -> { options(); return true }
+            KeyEvent.KEYCODE_MEDIA_AUDIO_TRACK, KeyEvent.KEYCODE_PROG_YELLOW -> { audioMenu(); return true }
             KeyEvent.KEYCODE_PROG_RED, KeyEvent.KEYCODE_BOOKMARK -> { toggleFav(); return true }
             KeyEvent.KEYCODE_INFO, KeyEvent.KEYCODE_GUIDE -> { list.getOrNull(index)?.let { showInfo(it, null) }; return true }
             KeyEvent.KEYCODE_PROG_GREEN -> {

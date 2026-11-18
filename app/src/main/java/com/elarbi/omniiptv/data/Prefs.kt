@@ -48,6 +48,11 @@ object Prefs {
         get() = p.getString("audioLang", "") ?: ""
         set(v) = p.edit().putString("audioLang", v).apply()
 
+    /** Langue audio choisie pour une chaîne (vide = langue préférée). */
+    fun channelAudio(key: String): String = Repo.app.getSharedPreferences("audio", Context.MODE_PRIVATE).getString(key, "") ?: ""
+    fun setChannelAudio(key: String, lang: String) =
+        Repo.app.getSharedPreferences("audio", Context.MODE_PRIVATE).edit().putString(key, lang).apply()
+
     /** Sources exclues de « Toutes les sources » dans les onglets. */
     var hiddenSources: Set<String>
         get() = p.getStringSet("hiddenSources", emptySet())?.toSet() ?: emptySet()
