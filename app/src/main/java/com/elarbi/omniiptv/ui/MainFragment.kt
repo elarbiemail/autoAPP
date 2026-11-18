@@ -33,7 +33,7 @@ class MainFragment : BrowseSupportFragment() {
         const val A_M3U = 1; const val A_XTREAM = 2; const val A_STALKER = 3; const val A_SOURCES = 4
         const val A_FREE = 5; const val A_SEARCH = 6; const val A_REFRESH = 7; const val A_HOME = 8
         const val A_HOME_LIVE = 9; const val A_LIVE_TAB = 10; const val A_ABOUT = 11; const val A_YT = 12; const val A_REPOS = 13; const val A_MANAGER = 14; const val A_EPG = 15
-        const val A_LIST = 16; const val A_GRID = 17; const val A_GUIDE = 18; const val A_MULTI = 19; const val A_SETTINGS = 20; const val A_TUNER = 21
+        const val A_LIST = 16; const val A_GRID = 17; const val A_GUIDE = 18; const val A_MULTI = 19; const val A_SETTINGS = 20; const val A_TUNER = 21; const val A_LIVE = 22; const val A_MOVIES = 23; const val A_SERIES = 24
     }
 
     private val rowsAdapter = ArrayObjectAdapter(ListRowPresenter())
@@ -65,10 +65,11 @@ class MainFragment : BrowseSupportFragment() {
     /** Rangée de raccourcis en tête ; toutes les options sont regroupées dans ⚙ Réglages. */
     private fun actions(): List<ActionItem> = listOf(
         ActionItem(A_SETTINGS, "⚙ Réglages", "Toutes les options de l'application", R.drawable.ic_info),
+        ActionItem(A_LIVE, "Direct", "Chaînes par catégorie, recherche", R.drawable.ic_tv),
+        ActionItem(A_MOVIES, "Films", "Par catégorie, recherche", R.drawable.ic_home),
+        ActionItem(A_SERIES, "Séries", "Par catégorie, recherche", R.drawable.ic_list),
         ActionItem(A_SEARCH, "Rechercher", "Dans toutes les sources", R.drawable.ic_search),
         ActionItem(A_GUIDE, "Guide TV", "Grille des programmes", R.drawable.ic_tv),
-        ActionItem(A_LIST, "Vue liste", "Direct, films, séries…", R.drawable.ic_list),
-        ActionItem(A_GRID, "Vue grille", "Vignettes et affiches", R.drawable.ic_home),
         ActionItem(A_MULTI, "Multi-écran", "4 chaînes à la fois", R.drawable.ic_tv),
         ActionItem(A_SOURCES, "Mes sources", Repo.activeSource()?.name ?: "Aucune source", R.drawable.ic_list)
     )
@@ -161,6 +162,9 @@ class MainFragment : BrowseSupportFragment() {
             A_XTREAM -> addSource(SourceType.XTREAM)
             A_STALKER -> addSource(SourceType.STALKER)
             A_TUNER -> tunerPermission.launch(TunerSource.permissions)
+            A_LIVE -> startActivity(Intent(ctx, BrowseActivity::class.java).putExtra("tab", "live"))
+            A_MOVIES -> startActivity(Intent(ctx, BrowseActivity::class.java).putExtra("tab", "movies"))
+            A_SERIES -> startActivity(Intent(ctx, BrowseActivity::class.java).putExtra("tab", "series"))
             A_GUIDE -> startActivity(Intent(ctx, GuideActivity::class.java))
             A_LIST -> startActivity(Intent(ctx, BrowseActivity::class.java).putExtra("mode", "list"))
             A_GRID -> startActivity(Intent(ctx, BrowseActivity::class.java).putExtra("mode", "grid"))

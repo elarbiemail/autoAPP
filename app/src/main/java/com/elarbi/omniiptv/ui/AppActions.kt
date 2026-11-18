@@ -91,7 +91,7 @@ object AppActions {
         ProgressUi.run(a, "Chargement des chaînes", {
             val msgs = ArrayList<String>()
             for (s in list) {
-                msgs += try { "${s.name} : ${Repo.refresh(s)} éléments" } catch (e: Exception) { "${s.name} : échec (${e.message})" }
+                msgs += try { Repo.refresh(s); "${s.name} : ${Repo.lastDiff(s.id)}" } catch (e: Exception) { "${s.name} : échec (${e.message}) — liste enregistrée conservée" }
             }
             msgs
         }) { r ->

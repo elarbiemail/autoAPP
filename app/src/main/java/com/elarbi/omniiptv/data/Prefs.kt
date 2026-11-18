@@ -64,6 +64,11 @@ object Prefs {
         get() = p.getString("themeAccent", "orange") ?: "orange"
         set(v) = p.edit().putString("themeAccent", v).apply()
 
+    /** Portail / source choisi dans la médiathèque (vide = sources affichées). */
+    var browseSource: String
+        get() = p.getString("browseSource", "") ?: ""
+        set(v) = p.edit().putString("browseSource", v).apply()
+
     var showClock: Boolean
         get() = p.getBoolean("showClock", true)
         set(v) = p.edit().putBoolean("showClock", v).apply()

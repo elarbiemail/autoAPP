@@ -43,7 +43,8 @@ class SourcesActivity : FragmentActivity() {
             val all = Repo.channels(s.id)
             val vodN = all.count { it.isVod }
             val counts = "${all.size - vodN} chaînes" + if (vodN > 0) " + $vodN films/séries" else ""
-            container.addView(Ui.button(this, "$mark${s.name}  —  ${s.typeLabel}\n$counts • liste $saved") { options(s) })
+            val diff = Repo.lastDiff(s.id).takeIf { it.isNotBlank() }?.let { "\nDernière comparaison : $it" } ?: ""
+            container.addView(Ui.button(this, "$mark${s.name}  —  ${s.typeLabel}\n$counts • liste $saved$diff") { options(s) })
         }
         container.addView(Ui.button(this, "☰ Afficher plusieurs sources ensemble…") { SourcePicker.pickSeveral(this) { render() } })
         container.addView(Ui.button(this, "＋ Ajouter une liste M3U") { add(SourceType.M3U) })
@@ -96,7 +97,7 @@ class SourcesActivity : FragmentActivity() {
 
     private fun refresh(s: Source) {
         ProgressUi.run(this, "Actualisation de « ${s.name} »", { Repo.refresh(s) }) { r ->
-            r.onSuccess { n -> Ui.toast(this, "$n éléments chargés"); HomeSyncWorker.runNow(this) }
+            r.onSuccess { _ -> Ui.toast(this, "« ${s.name} » : ${Repo.lastDiff(s.id)}"); HomeSyncWorker.runNow(this) }
                 .onFailure { e -> Ui.toast(this, "Échec : ${e.message}") }
             render()
         }

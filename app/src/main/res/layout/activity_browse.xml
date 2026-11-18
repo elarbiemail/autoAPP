@@ -8,10 +8,24 @@
     android:paddingEnd="@dimen/page_pad"
     android:paddingBottom="8dp">
 
-    <HorizontalScrollView android:layout_width="match_parent" android:layout_height="wrap_content">
+    <!-- Source + sections -->
+    <HorizontalScrollView android:layout_width="match_parent" android:layout_height="wrap_content" android:scrollbars="none">
         <LinearLayout android:id="@+id/br_tabs" android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:orientation="horizontal" />
+            android:gravity="center_vertical" android:orientation="horizontal" />
     </HorizontalScrollView>
+
+    <!-- Filtre des catégories + recherche -->
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp"
+        android:gravity="center_vertical" android:orientation="horizontal">
+        <EditText android:id="@+id/br_cat_filter" style="@style/Field" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_marginTop="0dp" android:hint="Filtrer les catégories…" android:imeOptions="actionDone"
+            android:inputType="text" android:textSize="16sp" />
+        <EditText android:id="@+id/br_search" style="@style/Field" android:layout_width="0dp" android:layout_weight="2.2"
+            android:layout_marginStart="14dp" android:layout_marginTop="0dp" android:hint="Rechercher une chaîne, un film, une série…"
+            android:imeOptions="actionSearch" android:inputType="text" android:textSize="16sp" />
+        <TextView android:id="@+id/br_scope" style="@style/Chip" android:layout_marginStart="10dp" android:text="Dans : tout" />
+        <TextView android:id="@+id/br_clear" style="@style/Chip" android:text="✕ Effacer" />
+    </LinearLayout>
 
     <TextView android:id="@+id/br_status" android:layout_width="wrap_content" android:layout_height="wrap_content"
         android:layout_marginTop="4dp" android:textColor="@color/hint" android:textSize="14sp" />
@@ -20,15 +34,18 @@
         android:layout_weight="1" android:orientation="horizontal">
         <ListView android:id="@+id/br_groups" android:layout_width="0dp" android:layout_height="match_parent"
             android:layout_weight="1" android:background="#22FFFFFF" android:choiceMode="singleChoice"
-            android:listSelector="?attr/omniAccent" />
+            android:fastScrollEnabled="true" android:listSelector="?attr/omniAccent" />
         <FrameLayout android:layout_width="0dp" android:layout_height="match_parent" android:layout_marginStart="14dp"
             android:layout_weight="3">
             <ListView android:id="@+id/br_list" android:layout_width="match_parent" android:layout_height="match_parent"
-                android:listSelector="?attr/omniAccent" />
+                android:fastScrollEnabled="true" android:listSelector="?attr/omniAccent" />
             <GridView android:id="@+id/br_grid" android:layout_width="match_parent" android:layout_height="match_parent"
-                android:columnWidth="190dp" android:horizontalSpacing="10dp" android:listSelector="?attr/omniAccent"
+                android:columnWidth="170dp" android:horizontalSpacing="10dp" android:listSelector="?attr/omniAccent"
                 android:numColumns="auto_fit" android:stretchMode="columnWidth" android:verticalSpacing="10dp"
                 android:visibility="gone" />
+            <TextView android:id="@+id/br_empty" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_gravity="center" android:gravity="center" android:padding="32dp" android:textColor="@color/hint"
+                android:textSize="17sp" android:visibility="gone" />
         </FrameLayout>
     </LinearLayout>
 </LinearLayout>

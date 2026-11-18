@@ -323,7 +323,15 @@ class StalkerClient(private val s: Source) {
 
     // ---------------- Films et séries ----------------
     /** Films et séries du portail (limité pour garder un chargement rapide). */
-    fun vod(onBatch: ((List<Channel>) -> Unit)? = null): List<Channel> {
+    /** Nombre d'éléments par catégorie au dernier chargement (pour ne recharger que ce qui a changé). */
+    val vodCounts = HashMap<String, Int>()
+
+    fun vod(
+        previous: List<Channel> = emptyList(), savedCounts: Map<String, Int> = emptyMap(),
+        onBatch: ((List<Channel>) -> Unit)? = null
+    ): List<Channel> {
+        val previousByGroup = previous.groupBy { it.group }
+        var reused = 0
         login()
         val out = ArrayList<Channel>()
         var budget = MAX_VOD_PAGES
@@ -334,6 +342,19 @@ class StalkerClient(private val s: Source) {
             val (cid, title) = cat
             if (budget <= 0) break
             Loading.step("Films et séries : « $title » (${ci + 1}/${cats.size})", ci + 1, cats.size)
+            // Comparaison rapide : si le nombre d'éléments de la catégorie n'a pas changé, on garde la liste enregistrée.
+            val first = try { call("type=vod&action=get_ordered_list&category=$cid&sortby=added&p=1") as? JSONObject } catch (e: Exception) { null }
+            val total = first?.str("total_items")?.toIntOrNull() ?: -1
+            if (total >= 0) vodCounts[cid] = total
+            val kept = (previousByGroup["Films · $title"].orEmpty() + previousByGroup["Séries · $title"].orEmpty())
+            if (total > 0 && savedCounts[cid] == total && kept.isNotEmpty()) {
+                out += kept
+                reused++
+                Loading.step("Films et séries : « $title » inchangée (${ci + 1}/${cats.size})", ci + 1, cats.size)
+                onBatch?.invoke(ArrayList(out))
+                continue
+            }
+            if (total == 0) continue
             val (items, used) = paged("type=vod&action=get_ordered_list&category=$cid&sortby=added", minOf(budget, 20)) { p, pages, n ->
                 Loading.step("Films et séries : « $title » (${ci + 1}/${cats.size}) — page $p/$pages", ci + 1, cats.size)
                 Loading.items(base + out.size + n)
@@ -360,6 +381,7 @@ class StalkerClient(private val s: Source) {
             // Enregistrement progressif, catégorie par catégorie.
             onBatch?.invoke(ArrayList(out))
         }
+        if (reused > 0) Loading.step("Films et séries : $reused catégorie(s) inchangée(s) reprises de la liste enregistrée")
         return out
     }
 

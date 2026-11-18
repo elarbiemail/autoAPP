@@ -46,6 +46,54 @@ object Repo {
         bump()
     }
 
+    /** Résumé de la dernière comparaison serveur / liste enregistrée. */
+    fun lastDiff(sourceId: String): String = prefs.getString("lastdiff_$sourceId", "").orEmpty()
+
+    /** Compare la liste du serveur à la liste enregistrée. */
+    fun compare(old: List<Channel>, new: List<Channel>): String {
+        if (old.isEmpty()) return "première liste enregistrée (${new.size} éléments)"
+        val before = old.associateBy { it.key }
+        val after = new.associateBy { it.key }
+        val added = after.keys.count { it !in before }
+        val removed = before.keys.count { it !in after }
+        val changed = after.count { (k, c) ->
+            val o = before[k]
+            o != null && (o.name != c.name || o.url != c.url || o.logo != c.logo || o.group != c.group)
+        }
+        return if (added + removed + changed == 0) "aucun changement (${new.size} éléments)"
+        else listOfNotNull(
+            if (added > 0) "+$added nouveaux" else null,
+            if (removed > 0) "−$removed retirés" else null,
+            if (changed > 0) "$changed modifiés" else null
+        ).joinToString(", ") + " (${new.size} éléments)"
+    }
+
+    /** Met à jour les copies gardées dans les favoris et les récents (nouveau lien, nouveau nom…). */
+    @Synchronized
+    private fun updateSnapshots(list: List<Channel>) {
+        val byKey = list.associateBy { it.key }
+        var fav = false
+        favorites.keys.toList().forEach { k -> byKey[k]?.let { if (it != favorites[k]) { favorites[k] = it; fav = true } } }
+        if (fav) saveChannels("favorites.json", favorites.values)
+        var rec = false
+        for (i in recents.indices) byKey[recents[i].key]?.let { if (it != recents[i]) { recents[i] = it; rec = true } }
+        if (rec) saveChannels("recents.json", recents)
+    }
+
+    private fun vodCounts(sourceId: String): Map<String, Int> = try {
+        val o = JSONObject(prefs.getString("vodcounts_$sourceId", "{}") ?: "{}")
+        val m = HashMap<String, Int>()
+        val keys = o.keys()
+        while (keys.hasNext()) { val k = keys.next(); m[k] = o.getInt(k) }
+        m
+    } catch (e: Exception) { emptyMap() }
+
+    private fun saveVodCounts(sourceId: String, m: Map<String, Int>) {
+        val o = JSONObject()
+        m.forEach { (k, v) -> o.put(k, v) }
+        prefs.edit().putString("vodcounts_$sourceId", o.toString()).apply()
+    }
+
     /** Liste de chaînes utilisée pour le zapping dans le lecteur. */
     var playContext: List<Channel> = emptyList()
 
@@ -160,6 +208,7 @@ object Repo {
 
     private suspend fun refreshInner(s: Source, withEpg: Boolean): Int = withContext(Dispatchers.IO) {
         var autoEpg = ""
+        val old = channels(s.id)   // liste enregistrée, pour la comparaison
         val list: List<Channel> = when (s.type) {
             SourceType.M3U -> {
                 val text = Http.getTracked(s.url, "Téléchargement de la liste", uaHeaders(s))
@@ -176,14 +225,16 @@ object Repo {
             SourceType.STALKER -> {
                 synchronized(stalkers) { stalkers.remove(s.id) }
                 val c = stalker(s.id)
-                val previousVod = channels(s.id).filter { it.isVod }
+                val previousVod = old.filter { it.isVod }
                 val live = c.channels()
                 // Les chaînes sont enregistrées tout de suite : elles restent disponibles même si la suite est interrompue.
                 commit(s.id, live + previousVod)
                 prefs.edit().putLong("lastrefresh_${s.id}", System.currentTimeMillis()).apply()
+                val counts = vodCounts(s.id)
                 val vod = try {
-                    c.vod { partial -> if (partial.size > previousVod.size) commit(s.id, live + partial) }
+                    c.vod(previousVod, counts) { partial -> if (partial.size > previousVod.size) commit(s.id, live + partial) }
                 } catch (e: Exception) { Log.w("Repo", "stalker vod", e); emptyList() }
+                if (vod.isNotEmpty()) saveVodCounts(s.id, c.vodCounts)
                 live + vod.ifEmpty { previousVod }
             }
             SourceType.YOUTUBE -> return@withContext channels(s.id).size
@@ -191,7 +242,11 @@ object Repo {
         }
         if (list.isEmpty()) throw IOException("Aucune chaîne trouvée")
         Loading.items(list.size)
-        Loading.step("Enregistrement de ${list.size} éléments…")
+        // Comparaison avec la liste enregistrée : nouveautés, retraits, modifications.
+        val summary = compare(old, list)
+        prefs.edit().putString("lastdiff_${s.id}", summary).apply()
+        Loading.step("Comparaison avec la liste enregistrée : $summary")
+        updateSnapshots(list)
         saveChannels("ch_${s.id}.json", list)
         synchronized(this@Repo) { channelCache[s.id] = list }
         if (autoEpg.isNotBlank()) prefs.edit().putString("autoepg_${s.id}", autoEpg).apply()
