@@ -867,7 +867,7 @@ class TvHomeActivity : FragmentActivity() {
         }
         val grpFilter = searchField("Filtrer les catégories…")
         val grpList = listView()
-        var visibleGroups = groups
+        var visibleGroups: List<G> = groups
         fun fillGroups() {
             val q = EpgNorm.norm(grpFilter.text.toString())
             val pairs = groups.indices.filter { q.isEmpty() || EpgNorm.norm(groupLabels[it]).contains(q) }
