@@ -47,7 +47,8 @@ object PlayerFactory {
         val props = HashMap(headers)
         if (referer.isNotBlank()) props["Referer"] = referer
         if (props.isNotEmpty()) http.setDefaultRequestProperties(props)
-        val dataSource = DefaultDataSource.Factory(ctx, http)
+        // Redirections mémorisées : indispensable pour les liens à usage unique des portails MAC (HLS en direct).
+        val dataSource = StickyRedirectDataSource.Factory(DefaultDataSource.Factory(ctx, http))
         val extractors = DefaultExtractorsFactory().setTsExtractorFlags(
             DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES or DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS
         )

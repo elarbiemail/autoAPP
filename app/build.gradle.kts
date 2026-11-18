@@ -11,8 +11,8 @@ android {
         applicationId = "com.elarbi.omniiptv"
         minSdk = 26
         targetSdk = 34
-        versionCode = 15
-        versionName = "1.2.1"
+        versionCode = 16
+        versionName = "1.2.2"
     }
     // Clé de signature FIXE : chaque nouvelle version s'installe par-dessus l'ancienne
     // (portails, listes de chaînes, favoris et réglages conservés).
