@@ -106,12 +106,8 @@ object Repo {
         } catch (e: Exception) {
             Log.w("Repo", "sources", e)
         }
-        readArray("favorites.json")?.let { a ->
-            for (i in 0 until a.length()) Channel.fromJson(a.getJSONObject(i)).let { favorites[it.key] = it }
-        }
-        readArray("recents.json")?.let { a ->
-            for (i in 0 until a.length()) recents.add(Channel.fromJson(a.getJSONObject(i)))
-        }
+        try { JsonStream.readChannels(file("favorites.json")).forEach { favorites[it.key] = it } } catch (_: Exception) {}
+        try { recents.addAll(JsonStream.readChannels(file("recents.json"))) } catch (_: Exception) {}
         Library.init()
     }
 
@@ -120,10 +116,9 @@ object Repo {
         try { JSONArray(it.readText()) } catch (e: Exception) { null }
     }
     private fun saveChannels(name: String, list: Collection<Channel>) {
-        val a = JSONArray()
-        list.forEach { a.put(it.toJson()) }
-        file(name).writeText(a.toString())
+        JsonStream.writeChannels(file(name), list)
     }
+
 
     fun bump() { version++ }
 
@@ -188,7 +183,7 @@ object Repo {
 
     @Synchronized
     fun channels(sourceId: String): List<Channel> = channelCache.getOrPut(sourceId) {
-        readArray("ch_$sourceId.json")?.let { a -> List(a.length()) { Channel.fromJson(a.getJSONObject(it)) } } ?: emptyList()
+        try { JsonStream.readChannels(file("ch_$sourceId.json")) } catch (e: Exception) { Log.w("Repo", "liste", e); emptyList() }
     }
 
     fun stalker(sourceId: String): StalkerClient = synchronized(stalkers) {
@@ -203,7 +198,14 @@ object Repo {
     /** Télécharge la liste des chaînes d'une source (et son guide TV). Renvoie le nombre de chaînes. */
     suspend fun refresh(s: Source, withEpg: Boolean = true): Int = withContext(Dispatchers.IO) {
         Loading.start(s.name)
-        try { refreshInner(s, withEpg) } finally { Loading.finish() }
+        try {
+            refreshInner(s, withEpg)
+        } catch (e: OutOfMemoryError) {
+            synchronized(this@Repo) { channelCache.remove(s.id) }
+            System.gc()
+            throw IOException("Mémoire insuffisante pour cette liste (le portail envoie trop de données à la fois). " +
+                "La liste déjà reçue est conservée ; réessayez, ou désactivez les films et séries du portail.")
+        } finally { Loading.finish() }
     }
 
     private suspend fun refreshInner(s: Source, withEpg: Boolean): Int = withContext(Dispatchers.IO) {
@@ -211,9 +213,9 @@ object Repo {
         val old = channels(s.id)   // liste enregistrée, pour la comparaison
         val list: List<Channel> = when (s.type) {
             SourceType.M3U -> {
-                val text = Http.getTracked(s.url, "Téléchargement de la liste", uaHeaders(s))
-                Loading.step("Lecture de la liste…")
-                val r = M3uParser.parse(text, s.id)
+                val r = Http.openTracked(s.url, "Téléchargement et lecture de la liste", uaHeaders(s)).use { input ->
+                    input.bufferedReader(Charsets.UTF_8).useLines { lines -> M3uParser.parseLines(lines, s.id) }
+                }
                 autoEpg = r.epgUrl
                 r.channels
             }
@@ -312,13 +314,7 @@ object Repo {
             }
         }
         if (merged.isEmpty() && urls.isNotEmpty() && errors == urls.size) throw IOException("Guide TV injoignable")
-        val o = JSONObject()
-        merged.forEach { (k, list) ->
-            val a = JSONArray()
-            list.forEach { p -> a.put(JSONArray().put(p.start).put(p.end).put(p.title).put(p.desc)) }
-            o.put(k, a)
-        }
-        file("epg_${s.id}.json").writeText(o.toString())
+        JsonStream.writeEpg(file("epg_${s.id}.json"), merged)
         val io = JSONObject()
         icons.forEach { (k, v) -> io.put(k, v) }
         file("epgicons_${s.id}.json").writeText(io.toString())
@@ -384,25 +380,9 @@ object Repo {
 
     @Synchronized
     fun epg(sourceId: String): Map<String, List<Programme>> = epgCache.getOrPut(sourceId) {
-        val f = file("epg_$sourceId.json")
-        if (!f.exists()) return@getOrPut emptyMap()
-        try {
-            val o = JSONObject(f.readText())
-            val m = HashMap<String, List<Programme>>()
-            val keys = o.keys()
-            while (keys.hasNext()) {
-                val k = keys.next()
-                val a = o.getJSONArray(k)
-                m[k] = List(a.length()) {
-                    val e = a.getJSONArray(it)
-                    Programme(e.getLong(0), e.getLong(1), e.optString(2), e.optString(3))
-                }
-            }
-            m
-        } catch (e: Exception) {
-            emptyMap()
-        }
+        try { JsonStream.readEpg(file("epg_$sourceId.json")) } catch (e: Exception) { emptyMap() }
     }
+
 
     fun programmes(ch: Channel): List<Programme> {
         val now = System.currentTimeMillis()

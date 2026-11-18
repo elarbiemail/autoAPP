@@ -46,38 +46,36 @@ class XtreamClient(private val s: Source) {
         val out = ArrayList<Channel>()
         Loading.step("Chaînes en direct…", 1, 3)
         val liveCats = categories("get_live_categories")
-        val live = JSONArray(Http.getTracked(api("get_live_streams"), "Chaînes en direct (1/3)", headers()))
-        Loading.items(live.length())
-        for (i in 0 until live.length()) {
-            val o = live.getJSONObject(i)
-            val id = o.str("stream_id")
+        streamList(api("get_live_streams"), "Chaînes en direct (1/3)",
+            setOf("stream_id", "name", "stream_icon", "category_id", "epg_channel_id", "tv_archive", "tv_archive_duration")) { o ->
+            val id = o["stream_id"].orEmpty()
             out.add(
                 Channel(
-                    key = "${s.id}|L$id", sourceId = s.id, name = o.str("name"),
+                    key = "${s.id}|L$id", sourceId = s.id, name = o["name"].orEmpty(),
                     url = "$base/live/${s.username}/${s.password}/$id.$ext",
-                    logo = o.str("stream_icon"), group = liveCats[o.str("category_id")] ?: "Divers",
-                    epgId = o.str("epg_channel_id"), userAgent = s.userAgent,
-                    archive = if (o.str("tv_archive") == "1") (o.str("tv_archive_duration").toIntOrNull() ?: 1) else 0
+                    logo = o["stream_icon"].orEmpty(), group = liveCats[o["category_id"].orEmpty()] ?: "Divers",
+                    epgId = o["epg_channel_id"].orEmpty(), userAgent = s.userAgent,
+                    archive = if (o["tv_archive"] == "1") (o["tv_archive_duration"]?.toIntOrNull() ?: 1) else 0
                 )
             )
+            if (out.size % 500 == 0) Loading.items(out.size)
         }
+        Loading.items(out.size)
         try {
             Loading.step("Films…", 2, 3)
             val vodCats = categories("get_vod_categories")
-            val vod = JSONArray(Http.getTracked(api("get_vod_streams"), "Films (2/3)", headers()))
-            Loading.items(out.size + vod.length())
-            for (i in 0 until vod.length()) {
-                val o = vod.getJSONObject(i)
-                val id = o.str("stream_id")
-                val e = o.str("container_extension").ifBlank { "mp4" }
+            streamList(api("get_vod_streams"), "Films (2/3)", setOf("stream_id", "name", "stream_icon", "category_id", "container_extension")) { o ->
+                val id = o["stream_id"].orEmpty()
+                val e = o["container_extension"].orEmpty().ifBlank { "mp4" }
                 out.add(
                     Channel(
-                        key = "${s.id}|V$id", sourceId = s.id, name = o.str("name"),
+                        key = "${s.id}|V$id", sourceId = s.id, name = o["name"].orEmpty(),
                         url = "$base/movie/${s.username}/${s.password}/$id.$e",
-                        logo = o.str("stream_icon"), group = "Films · " + (vodCats[o.str("category_id")] ?: "Divers"),
+                        logo = o["stream_icon"].orEmpty(), group = "Films · " + (vodCats[o["category_id"].orEmpty()] ?: "Divers"),
                         userAgent = s.userAgent, isVod = true
                     )
                 )
+                if (out.size % 500 == 0) Loading.items(out.size)
             }
         } catch (_: Exception) {
         }
@@ -90,15 +88,25 @@ class XtreamClient(private val s: Source) {
     /** Séries : une entrée par série (url « xtseries:id »), les épisodes sont chargés à l'ouverture. */
     fun series(): List<Channel> {
         val cats = categories("get_series_categories")
-        val a = JSONArray(Http.get(api("get_series"), headers()))
-        return (0 until a.length()).map { i ->
-            val o = a.getJSONObject(i)
-            val id = o.str("series_id")
-            Channel(
-                key = "${s.id}|S$id", sourceId = s.id, name = o.str("name"), url = "xtseries:$id",
-                logo = o.str("cover"), group = "Séries · " + (cats[o.str("category_id")] ?: "Divers"),
-                userAgent = s.userAgent, isVod = true
+        val out = ArrayList<Channel>()
+        streamList(api("get_series"), "Séries (3/3)", setOf("series_id", "name", "cover", "category_id")) { o ->
+            val id = o["series_id"].orEmpty()
+            out.add(
+                Channel(
+                    key = "${s.id}|S$id", sourceId = s.id, name = o["name"].orEmpty(), url = "xtseries:$id",
+                    logo = o["cover"].orEmpty(), group = "Séries · " + (cats[o["category_id"].orEmpty()] ?: "Divers"),
+                    userAgent = s.userAgent, isVod = true
+                )
             )
+        }
+        return out
+    }
+
+    /** Lit une grande liste JSON en flux (sans la charger entièrement en mémoire). */
+    private fun streamList(url: String, label: String, keep: Set<String>, f: (Map<String, String>) -> Unit) {
+        Http.openTracked(url, label, headers()).use { input ->
+            val r = JsonStream.reader(input)
+            JsonStream.forEachObject(r) { f(JsonStream.flat(it, keep)) }
         }
     }
 

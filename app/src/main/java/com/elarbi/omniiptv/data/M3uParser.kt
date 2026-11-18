@@ -13,7 +13,10 @@ object M3uParser {
 
     private fun decode(v: String): String = try { URLDecoder.decode(v, "UTF-8") } catch (e: Exception) { v }
 
-    fun parse(text: String, sourceId: String): Result {
+    fun parse(text: String, sourceId: String): Result = parseLines(text.lineSequence(), sourceId)
+
+    /** Lecture ligne à ligne (listes très volumineuses sans tout charger en mémoire). */
+    fun parseLines(lines: Sequence<String>, sourceId: String): Result {
         var epg = ""
         val out = ArrayList<Channel>()
         val seen = HashSet<String>()
@@ -22,7 +25,7 @@ object M3uParser {
         var ua = ""
         var ref = ""
         var grp = ""
-        for (raw in text.lineSequence()) {
+        for (raw in lines) {
             val line = raw.trim().removePrefix("﻿")
             if (line.isEmpty()) continue
             if (line.startsWith("#EXTM3U")) {

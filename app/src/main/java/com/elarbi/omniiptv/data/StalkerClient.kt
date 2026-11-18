@@ -3,6 +3,8 @@ package com.elarbi.omniiptv.data
 import com.elarbi.omniiptv.model.Channel
 import com.elarbi.omniiptv.model.Programme
 import com.elarbi.omniiptv.model.Source
+import com.google.gson.stream.JsonReader
+import com.google.gson.stream.JsonToken
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
@@ -135,6 +137,41 @@ class StalkerClient(private val s: Source) {
         }
     }
 
+    /** Réponse lue en flux (très grosses listes) : onJs reçoit le lecteur positionné sur « js ». */
+    private fun rawStream(endpoint: String, query: String, onJs: (JsonReader) -> Unit) {
+        val input = try {
+            Http.open("$endpoint?$query&JsHttpRequest=1-xml", headers(endpoint))
+        } catch (e: IOException) {
+            val m = e.message.orEmpty()
+            if (m.contains("401") || m.contains("403")) throw AuthExpired()
+            throw e
+        }
+        input.use {
+            val r = JsonStream.reader(it)
+            var authFailed = false
+            r.beginObject()
+            while (r.hasNext()) {
+                when (r.nextName()) {
+                    "js" -> onJs(r)
+                    "text" -> if (JsonStream.value(r).contains("Authorization failed", true)) authFailed = true
+                    else -> r.skipValue()
+                }
+            }
+            if (authFailed) throw AuthExpired()
+        }
+    }
+
+    private fun callStream(query: String, onJs: (JsonReader) -> Unit) {
+        login()
+        try {
+            rawStream(api, query, onJs)
+        } catch (e: AuthExpired) {
+            synchronized(this) { token = "" }
+            login()
+            rawStream(api, query, onJs)
+        }
+    }
+
     // ---------------- Connexion ----------------
     @Synchronized
     fun login() {
@@ -251,40 +288,60 @@ class StalkerClient(private val s: Source) {
     }
 
     // ---------------- Chaînes ----------------
+    private val channelKeys = setOf("id", "name", "cmd", "logo", "tv_genre_id", "censored", "xmltv_id")
+
     fun channels(): List<Channel> {
         login()
         Loading.step("Catégories de chaînes…")
         val genres = categories("itv", "get_genres").toMap()
-        val items = ArrayList<JSONObject>()
+        val items = ArrayList<Map<String, String>>()
         try {
             Loading.step("Liste complète des chaînes…")
-            val arr = when (val js = call("type=itv&action=get_all_channels")) {
-                is JSONObject -> js.optJSONArray("data")
-                is JSONArray -> js
-                else -> null
+            // Lecture en flux : seuls les champs utiles de chaque chaîne sont gardés en mémoire.
+            callStream("type=itv&action=get_all_channels") { r ->
+                items.clear()
+                val collect: (JsonReader) -> Unit = { o ->
+                    items += JsonStream.flat(o, channelKeys)
+                    if (items.size % 1000 == 0) { Loading.step("Liste complète des chaînes : ${items.size} reçues…"); Loading.items(items.size) }
+                }
+                when (r.peek()) {
+                    JsonToken.BEGIN_OBJECT -> {
+                        r.beginObject()
+                        while (r.hasNext()) { if (r.nextName() == "data") JsonStream.forEachObject(r, collect) else r.skipValue() }
+                        r.endObject()
+                    }
+                    JsonToken.BEGIN_ARRAY -> JsonStream.forEachObject(r, collect)
+                    else -> r.skipValue()
+                }
             }
-            if (arr != null) for (i in 0 until arr.length()) arr.optJSONObject(i)?.let { items += it }
+        } catch (e: OutOfMemoryError) {
+            throw e
         } catch (_: Exception) {
+            items.clear()
         }
         if (items.isEmpty()) {
             // Portails qui n'autorisent que la liste paginée.
-            items += paged("type=itv&action=get_ordered_list&genre=*&fav=0&sortby=number", MAX_CHANNEL_PAGES) { p, pages, n ->
+            paged("type=itv&action=get_ordered_list&genre=*&fav=0&sortby=number", MAX_CHANNEL_PAGES) { p, pages, n ->
                 Loading.step("Chaînes : page $p / $pages", p, pages)
                 Loading.items(n)
-            }.first
+            }.first.forEach { o -> items += channelKeys.associateWith { k -> o.str(k) } }
         }
         if (items.isEmpty()) throw IOException("Aucune chaîne renvoyée par le portail (abonnement inactif ?)")
         Loading.items(items.size)
-        return items.distinctBy { it.str("id") }.map { o ->
-            val id = o.str("id")
-            val adult = o.str("censored") == "1"
-            val group = (genres[o.str("tv_genre_id")]?.ifBlank { null } ?: "Chaînes") + if (adult) " (18+)" else ""
-            Channel(
-                key = "${s.id}|stk$id", sourceId = s.id, name = o.str("name"),
-                url = "stalker:" + o.str("cmd"), logo = logoUrl(o.str("logo")), group = group,
-                epgId = o.str("xmltv_id").ifBlank { "stk:$id" }, userAgent = userAgent
+        val seen = HashSet<String>()
+        val out = ArrayList<Channel>(items.size)
+        for (o in items) {
+            val id = o["id"].orEmpty()
+            if (!seen.add(id)) continue
+            val adult = o["censored"] == "1"
+            val group = (genres[o["tv_genre_id"].orEmpty()]?.ifBlank { null } ?: "Chaînes") + if (adult) " (18+)" else ""
+            out += Channel(
+                key = "${s.id}|stk$id", sourceId = s.id, name = o["name"].orEmpty(),
+                url = "stalker:" + o["cmd"].orEmpty(), logo = logoUrl(o["logo"].orEmpty()), group = group,
+                epgId = o["xmltv_id"].orEmpty().ifBlank { "stk:$id" }, userAgent = userAgent
             )
         }
+        return out
     }
 
     /** Lien de lecture temporaire d'une chaîne (type itv) ou d'un film / épisode (type vod). */
@@ -440,15 +497,51 @@ class StalkerClient(private val s: Source) {
         )
     }.filter { it.start > 0 && it.end > it.start }.sortedBy { it.start }
 
+    private val epgKeys = setOf("name", "title", "descr", "description", "start_timestamp", "stop_timestamp", "start", "end", "stop")
+
+    /** Guide du portail, lu en flux et limité à la fenêtre utile (−24 h / +48 h). */
     fun epg(): Map<String, List<Programme>> {
-        val js = try { call("type=itv&action=get_epg_info&period=24") as? JSONObject } catch (e: Exception) { null } ?: return emptyMap()
-        val data = js.optJSONObject("data") ?: return emptyMap()
         val out = HashMap<String, List<Programme>>()
-        val keys = data.keys()
-        while (keys.hasNext()) {
-            val id = keys.next()
-            val l = programmes(data.optJSONArray(id) ?: continue)
-            if (l.isNotEmpty()) out["stk:$id"] = l
+        val now = System.currentTimeMillis()
+        val from = now - 24 * 3600_000L
+        val to = now + 48 * 3600_000L
+        fun t(o: Map<String, String>, vararg keys: String): Long {
+            for (k in keys) { val n = o[k]?.toLongOrNull() ?: continue; return if (n > 10_000_000_000L) n else n * 1000 }
+            return 0L
+        }
+        try {
+            callStream("type=itv&action=get_epg_info&period=24") { r ->
+                out.clear()
+                if (r.peek() != JsonToken.BEGIN_OBJECT) { r.skipValue(); return@callStream }
+                r.beginObject()
+                while (r.hasNext()) {
+                    if (r.nextName() != "data" || r.peek() != JsonToken.BEGIN_OBJECT) { r.skipValue(); continue }
+                    r.beginObject()
+                    while (r.hasNext()) {
+                        val id = r.nextName()
+                        if (r.peek() != JsonToken.BEGIN_ARRAY) { r.skipValue(); continue }
+                        val l = ArrayList<Programme>()
+                        r.beginArray()
+                        while (r.hasNext()) {
+                            if (r.peek() != JsonToken.BEGIN_OBJECT) { r.skipValue(); continue }
+                            val o = JsonStream.flat(r, epgKeys)
+                            val st = t(o, "start_timestamp", "start")
+                            val en = t(o, "stop_timestamp", "end", "stop")
+                            if (st > 0 && en > st && en > from && st < to) {
+                                l += Programme(st, en, o["name"].orEmpty().ifBlank { o["title"].orEmpty() },
+                                    o["descr"].orEmpty().ifBlank { o["description"].orEmpty() }.take(300))
+                            }
+                        }
+                        r.endArray()
+                        if (l.isNotEmpty()) out["stk:$id"] = l.sortedBy { it.start }
+                    }
+                    r.endObject()
+                }
+                r.endObject()
+            }
+        } catch (e: OutOfMemoryError) {
+            throw e
+        } catch (_: Exception) {
         }
         return out
     }
