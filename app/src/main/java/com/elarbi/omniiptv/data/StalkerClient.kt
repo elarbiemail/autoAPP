@@ -653,12 +653,17 @@ class StalkerClient(private val s: Source) {
 
     private val epgKeys = setOf("name", "title", "descr", "description", "start_timestamp", "stop_timestamp", "start", "end", "stop")
 
-    /** Guide du portail, lu en flux et limité à la fenêtre utile (−24 h / +48 h). */
+    /**
+     * Guide du portail, lu en flux et limité à ce qui sert (−3 h / +24 h, 40 programmes par chaîne,
+     * descriptions courtes, 250 000 programmes au plus) : sur un gros portail, le guide complet
+     * saturait la mémoire et le stockage du téléviseur.
+     */
     fun epg(): Map<String, List<Programme>> {
         val out = HashMap<String, List<Programme>>()
         val now = System.currentTimeMillis()
-        val from = now - 24 * 3600_000L
-        val to = now + 48 * 3600_000L
+        val from = now - 3 * 3600_000L
+        val to = now + 24 * 3600_000L
+        var total = 0
         fun t(o: Map<String, String>, vararg keys: String): Long {
             for (k in keys) { val n = o[k]?.toLongOrNull() ?: continue; return if (n > 10_000_000_000L) n else n * 1000 }
             return 0L
@@ -681,9 +686,10 @@ class StalkerClient(private val s: Source) {
                             val o = JsonStream.flat(r, epgKeys)
                             val st = t(o, "start_timestamp", "start")
                             val en = t(o, "stop_timestamp", "end", "stop")
-                            if (st > 0 && en > st && en > from && st < to) {
+                            if (st > 0 && en > st && en > from && st < to && l.size < 40 && total < 250_000) {
                                 l += Programme(st, en, o["name"].orEmpty().ifBlank { o["title"].orEmpty() },
-                                    o["descr"].orEmpty().ifBlank { o["description"].orEmpty() }.take(300))
+                                    o["descr"].orEmpty().ifBlank { o["description"].orEmpty() }.take(160))
+                                total++
                             }
                         }
                         r.endArray()

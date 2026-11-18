@@ -25,11 +25,25 @@ object TifSync {
     fun selection(): List<Channel> {
         val fav = Repo.favorites.values.filter { !it.isVod && !it.url.startsWith("tuner:") }.map { com.elarbi.omniiptv.data.Edits.apply(it) }
         if (fav.isNotEmpty()) return fav
-        return com.elarbi.omniiptv.data.Shown.channels().filter { !it.isVod && !it.url.startsWith("tuner:") }.take(800)
+        return com.elarbi.omniiptv.data.Shown.channels().asSequence().filter { !it.isVod && !it.url.startsWith("tuner:") }.take(300).toList()
+    }
+
+    /** Publication dans l'onglet Direct demandée au moins une fois (sinon le passage automatique ne fait rien). */
+    fun enabled(ctx: Context): Boolean {
+        val p = ctx.getSharedPreferences("home", Context.MODE_PRIVATE)
+        if (p.contains("tif")) return p.getBoolean("tif", false)
+        // Chaînes déjà publiées par une version précédente : on continue de les tenir à jour.
+        val published = try {
+            ctx.contentResolver.query(TvContract.buildChannelsUriForInput(inputId(ctx)), arrayOf(BaseColumns._ID), null, null, null)
+                ?.use { it.count > 0 } ?: false
+        } catch (e: Exception) { false }
+        p.edit().putBoolean("tif", published).apply()
+        return published
     }
 
     /** Renvoie le nombre de chaînes publiées. */
     fun sync(ctx: Context): Int {
+        ctx.getSharedPreferences("home", Context.MODE_PRIVATE).edit().putBoolean("tif", true).apply()
         val cr = ctx.contentResolver
         val input = inputId(ctx)
         val existing = HashMap<String, Long>()

@@ -31,7 +31,7 @@ class XtreamClient(private val s: Source) {
         return "$base/timeshift/${s.username}/${s.password}/$minutes/${f.format(java.util.Date(start))}/$streamId.ts"
     }
 
-    fun channels(): List<Channel> {
+    fun channels(withVod: Boolean = true): List<Channel> {
         Loading.step("Connexion au serveur Xtream…")
         val auth = JSONObject(Http.get(api(null), headers()))
         val ui = auth.optJSONObject("user_info")
@@ -61,6 +61,7 @@ class XtreamClient(private val s: Source) {
             if (out.size % 500 == 0) Loading.items(out.size)
         }
         Loading.items(out.size)
+        if (!withVod) return out
         try {
             Loading.step("Films…", 2, 3)
             val vodCats = categories("get_vod_categories")

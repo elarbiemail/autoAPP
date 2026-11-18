@@ -52,7 +52,15 @@ object HomeScreen {
         return try {
             val pr = prefs(ctx)
             val saved = pr.getLong(slot, -1L)
-            if (saved > 0 && channelExists(ctx, saved)) return saved
+            if (saved > 0 && channelExists(ctx, saved)) {
+                // Nom changé dans les réglages : la rangée est renommée sur l'accueil.
+                if (pr.getString("name_$slot", name) != name) try {
+                    val cv = android.content.ContentValues().apply { put(TvContractCompat.Channels.COLUMN_DISPLAY_NAME, name) }
+                    ctx.contentResolver.update(TvContractCompat.buildChannelUri(saved), cv, null, null)
+                    pr.edit().putString("name_$slot", name).apply()
+                } catch (_: Exception) {}
+                return saved
+            }
             val ch = TvChannel.Builder()
                 .setType(TvContractCompat.Channels.TYPE_PREVIEW)
                 .setDisplayName(name)
@@ -67,28 +75,28 @@ object HomeScreen {
             } catch (_: Exception) {
             }
             if (makeDefault) try { TvContractCompat.requestChannelBrowsable(ctx, id) } catch (_: Exception) {}
-            pr.edit().putLong(slot, id).apply()
+            pr.edit().putLong(slot, id).putString("name_$slot", name).apply()
             id
         } catch (e: Exception) {
             null
         }
     }
 
-    /** Contenu de la rangée principale : reprise, favoris, « À regarder », sinon chaînes de la source. */
-    private fun mainItems(): List<Channel> {
-        val resume = Library.resume.values.toList()
-        val fav = Repo.favorites.values.map { Edits.apply(it) }
-        val watch = Library.watchlist.values.toList()
-        var all = (resume.take(10) + fav + watch).distinctBy { it.key }
-        if (all.size < 6) {
-            val more = Repo.recents.map { Edits.apply(it) } +
-                com.elarbi.omniiptv.data.Shown.channels().filter { c -> !c.isVod }.take(30)
-            all = (all + more).distinctBy { it.key }
-        }
-        return all.filter { !Prefs.isLocked(it) && !Prefs.isHiddenAdult(it) }.take(40)
+    /** Supprime une rangée de l'écran d'accueil. */
+    fun deleteChannel(ctx: Context, slot: String) {
+        val pr = prefs(ctx)
+        val id = pr.getLong(slot, -1L)
+        if (id > 0) try { ctx.contentResolver.delete(TvContractCompat.buildChannelUri(id), null, null) } catch (_: Exception) {}
+        pr.edit().remove(slot).remove("name_$slot").apply()
     }
 
-    private fun program(ctx: Context, channelId: Long, ch: Channel, weight: Int): PreviewProgram {
+    /** Demande au téléviseur d'afficher la rangée sur l'accueil (le téléviseur peut demander confirmation). */
+    fun requestShow(ctx: Context, slot: String, name: String): Boolean {
+        val id = ensureChannel(ctx, slot, name, false) ?: return false
+        return try { TvContractCompat.requestChannelBrowsable(ctx, id); true } catch (_: Exception) { false }
+    }
+
+    private fun program(ctx: Context, channelId: Long, ch: Channel, weight: Int, style: String = "program"): PreviewProgram {
         val b = PreviewProgram.Builder()
             .setChannelId(channelId)
             .setIntentUri(deepLink(ch))
@@ -101,6 +109,15 @@ object HomeScreen {
                 .setDescription((if (p != null) "Reprendre à $p % · " else "") + ch.group)
                 .setPosterArtUri(poster(ctx, ch))
                 .setPosterArtAspectRatio(TvContractCompat.PreviewPrograms.ASPECT_RATIO_2_3)
+        } else if (style == "channel") {
+            // Présentation « chaîne » : nom et logo, programme en description.
+            val (now, next) = Repo.nowNext(ch)
+            b.setType(TvContractCompat.PreviewPrograms.TYPE_CHANNEL)
+                .setTitle(ch.name)
+                .setDescription(listOfNotNull(now?.let { "${Ui.hm(it.start)} ${it.title}" }, next?.let { "puis ${it.title}" }).joinToString(" · ").ifBlank { ch.group })
+                .setPosterArtUri(poster(ctx, ch))
+                .setPosterArtAspectRatio(TvContractCompat.PreviewPrograms.ASPECT_RATIO_16_9)
+                .setLive(true)
         } else {
             val (now, next) = Repo.nowNext(ch)
             val art = try { Posters.make(ctx, ch, now, next) } catch (e: Exception) { poster(ctx, ch) }
@@ -114,31 +131,20 @@ object HomeScreen {
         return b.build()
     }
 
+    /** Met à jour toutes les rangées configurées (Réglages > Écran d'accueil du TV). */
     fun sync(ctx: Context) {
         val cr = ctx.contentResolver
-        val favId = ensureChannel(ctx, SLOT_FAV, NAME_FAV, true) ?: return
-        try {
-            Posters.cleanup(ctx)
-            cr.delete(TvContractCompat.buildPreviewProgramsUriForChannel(favId), null, null)
-            val items = mainItems()
-            items.forEachIndexed { i, ch ->
-                try { cr.insert(TvContractCompat.PreviewPrograms.CONTENT_URI, program(ctx, favId, ch, 1000 - i).toContentValues()) } catch (_: Exception) {}
+        try { Posters.cleanup(ctx) } catch (_: Exception) {}
+        HomeRows.rows(ctx).forEachIndexed { n, row ->
+            if (!row.enabled) { deleteChannel(ctx, row.id); return@forEachIndexed }
+            val id = ensureChannel(ctx, row.id, row.name, n == 0) ?: return@forEachIndexed
+            try {
+                cr.delete(TvContractCompat.buildPreviewProgramsUriForChannel(id), null, null)
+                HomeRows.items(row).forEachIndexed { i, ch ->
+                    try { cr.insert(TvContractCompat.PreviewPrograms.CONTENT_URI, program(ctx, id, ch, 1000 - i, row.style).toContentValues()) } catch (_: Exception) {}
+                }
+            } catch (_: Exception) {
             }
-        } catch (_: Exception) {
-        }
-
-        // Rangée « En ce moment » : seulement si elle existe déjà (l'utilisateur l'a ajoutée).
-        val liveId = prefs(ctx).getLong(SLOT_LIVE, -1L)
-        if (liveId <= 0 || !channelExists(ctx, liveId)) return
-        try {
-            cr.delete(TvContractCompat.buildPreviewProgramsUriForChannel(liveId), null, null)
-            val pool = (Repo.favorites.values.map { Edits.apply(it) } + Repo.recents.map { Edits.apply(it) } +
-                com.elarbi.omniiptv.data.Shown.channels().take(400))
-                .filter { !it.isVod && !Prefs.isLocked(it) }.distinctBy { it.key }
-            pool.filter { Repo.nowNext(it).first != null }.take(40).forEachIndexed { i, ch ->
-                try { cr.insert(TvContractCompat.PreviewPrograms.CONTENT_URI, program(ctx, liveId, ch, 1000 - i).toContentValues()) } catch (_: Exception) {}
-            }
-        } catch (_: Exception) {
         }
     }
 

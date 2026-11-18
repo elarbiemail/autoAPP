@@ -17,6 +17,8 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import com.elarbi.omniiptv.data.Backup
 import com.elarbi.omniiptv.data.Edits
 import com.elarbi.omniiptv.data.Prefs
@@ -242,10 +244,113 @@ class SettingsActivity : FragmentActivity() {
     }
 
     private fun homeScreen() {
-        note("Rangées de programmes sur l'écran d'accueil Google TV, comme YouTube ou CloudStream.")
-        link("Rangée Omni IPTV", "Mettre à jour et explications") { main(MainFragment.A_HOME) }
-        link("Ajouter la rangée « En ce moment »") { main(MainFragment.A_HOME_LIVE) }
-        link("Publier les chaînes dans l'onglet Direct") { main(MainFragment.A_LIVE_TAB) }
+        note("Rangées d'Omni IPTV sur l'accueil Google TV : nom, contenu, nombre d'éléments et présentation au choix. " +
+            "L'ordre des rangées sur l'accueil se règle aussi dans le téléviseur (Accueil > Personnaliser les chaînes).")
+        for (r in com.elarbi.omniiptv.home.HomeRows.rows(this)) {
+            row((if (r.enabled) "✅  " else "⬜  ") + r.name,
+                "${com.elarbi.omniiptv.home.HomeRows.kindLabel(r)}  •  ${r.max} éléments  •  " +
+                    if (r.style == "channel") "nom et logo de la chaîne" else "programme en cours") { homeRowMenu(r) }
+        }
+        link("＋ Ajouter une rangée sur l'accueil") {
+            chooseHomeContent { kind, arg, name ->
+                val r = com.elarbi.omniiptv.home.HomeRows.add(this, kind, arg, name)
+                syncHome(showRow = r)
+            }
+        }
+        link("Mettre à jour l'accueil maintenant") { syncHome() }
+        link("Publier les chaînes dans l'onglet Direct", "Chaînes et programmes dans l'onglet Direct de Google TV") { main(MainFragment.A_LIVE_TAB) }
+    }
+
+    /** Met à jour l'accueil ; si demandé, propose d'y afficher la rangée (le téléviseur demande confirmation). */
+    private fun syncHome(showRow: com.elarbi.omniiptv.home.HomeRows.Row? = null) {
+        Ui.toast(this, "Mise à jour de l'accueil du téléviseur…")
+        lifecycleScope.launch {
+            val id = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                try { com.elarbi.omniiptv.home.HomeScreen.sync(this@SettingsActivity) } catch (_: Throwable) {}
+                showRow?.let { r -> com.elarbi.omniiptv.home.HomeScreen.ensureChannel(this@SettingsActivity, r.id, r.name, false) }
+            }
+            if (showRow != null) {
+                if (id == null) Ui.toast(this@SettingsActivity, "Cet appareil ne gère pas les rangées d'accueil.")
+                else try {
+                    startActivity(android.content.Intent(androidx.tvprovider.media.tv.TvContractCompat.ACTION_REQUEST_CHANNEL_BROWSABLE)
+                        .putExtra(androidx.tvprovider.media.tv.TvContractCompat.EXTRA_CHANNEL_ID, id))
+                } catch (e: Exception) {
+                    Ui.toast(this@SettingsActivity, "Ajoutez la rangée depuis l'accueil : Personnaliser les chaînes > Omni IPTV.")
+                }
+            }
+            render()
+        }
+    }
+
+    private fun homeRowMenu(r: com.elarbi.omniiptv.home.HomeRows.Row) {
+        val H = com.elarbi.omniiptv.home.HomeRows
+        val opts = ArrayList<Pair<String, () -> Unit>>()
+        opts += "✎ Renommer" to {
+            val e = EditText(this).apply { setText(r.name); setTextColor(Color.WHITE) }
+            AlertDialog.Builder(this).setTitle("Nom de la rangée").setView(e)
+                .setPositiveButton("OK") { _, _ -> e.text.toString().trim().takeIf { it.isNotEmpty() }?.let { H.update(this, r.copy(name = it.take(40))); syncHome() } }
+                .setNegativeButton("Annuler", null).show()
+        }
+        opts += "Contenu : ${H.kindLabel(r)}" to { chooseHomeContent { k, a, _ -> H.update(this, r.copy(kind = k, arg = a)); syncHome() } }
+        opts += "Nombre d'éléments : ${r.max}" to {
+            val n = listOf(10, 20, 30, 40, 60)
+            AlertDialog.Builder(this).setTitle("Nombre d'éléments")
+                .setSingleChoiceItems(n.map { "$it" }.toTypedArray(), n.indexOf(r.max)) { d, w -> d.dismiss(); H.update(this, r.copy(max = n[w])); syncHome() }
+                .show()
+        }
+        opts += "Présentation : " + (if (r.style == "channel") "nom et logo de la chaîne" else "programme en cours (vignette composée)") to {
+            H.update(this, r.copy(style = if (r.style == "channel") "program" else "channel")); syncHome()
+        }
+        opts += (if (r.enabled) "⬜ Retirer de l'accueil" else "✅ Afficher sur l'accueil") to {
+            val n = r.copy(enabled = !r.enabled); H.update(this, n); syncHome(showRow = if (n.enabled) n else null)
+        }
+        if (r.enabled) opts += "Demander l'affichage sur l'accueil" to { syncHome(showRow = r) }
+        opts += "↑ Monter" to { H.move(this, r.id, -1); render() }
+        opts += "↓ Descendre" to { H.move(this, r.id, 1); render() }
+        opts += "🗑 Supprimer la rangée" to {
+            lifecycleScope.launch {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { H.remove(this@SettingsActivity, r.id) }
+                render()
+            }
+        }
+        AlertDialog.Builder(this).setTitle(r.name)
+            .setItems(opts.map { it.first }.toTypedArray()) { _, w -> opts[w].second() }
+            .setNegativeButton("Fermer", null).show()
+    }
+
+    /** Choix du contenu d'une rangée : listes de favoris, reprise, récentes, en ce moment, catégorie d'une source. */
+    private fun chooseHomeContent(done: (String, String, String) -> Unit) {
+        val choices = ArrayList<Triple<String, String, String>>()   // kind, arg, nom proposé
+        choices += Triple("main", "", "Omni IPTV")
+        com.elarbi.omniiptv.data.FavLists.lists().forEach { choices += Triple("fav", it.id, "Omni · ${it.name}") }
+        choices += Triple("resume", "", "Omni · Continuer à regarder")
+        choices += Triple("watch", "", "Omni · À regarder")
+        choices += Triple("recent", "", "Omni · Récentes")
+        choices += Triple("now", "", "Omni · En ce moment")
+        val labels = listOf("Mélange : reprise, favoris, à regarder") +
+            com.elarbi.omniiptv.data.FavLists.lists().map { "★ Liste « ${it.name} »" } +
+            listOf("▶ Continuer à regarder", "À regarder", "🕘 Regardées récemment", "📺 En ce moment (programmes en cours)", "🗂 Une catégorie d'une source…")
+        AlertDialog.Builder(this).setTitle("Contenu de la rangée")
+            .setItems(labels.toTypedArray()) { _, w ->
+                if (w < choices.size) { val c = choices[w]; done(c.first, c.second, c.third); return@setItems }
+                val srcs = Repo.sources.filter { it.type != SourceType.YOUTUBE }
+                if (srcs.isEmpty()) return@setItems
+                AlertDialog.Builder(this).setTitle("Source")
+                    .setItems(srcs.map { it.name }.toTypedArray()) { _, i ->
+                        val src = srcs[i]
+                        Ui.toast(this, "Lecture des catégories…")
+                        lifecycleScope.launch {
+                            val groups = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                                try { Edits.groups(src.id) } catch (e: Throwable) { emptyList() }
+                            }
+                            if (groups.isEmpty()) { Ui.toast(this@SettingsActivity, "Aucune catégorie : actualisez d'abord la source."); return@launch }
+                            AlertDialog.Builder(this@SettingsActivity).setTitle("Catégorie de ${src.name}")
+                                .setItems(groups.toTypedArray()) { _, g ->
+                                    done("group", src.id + "\u0001" + groups[g], "Omni · " + groups[g].removePrefix("Films · ").removePrefix("Séries · "))
+                                }.show()
+                        }
+                    }.show()
+            }.show()
     }
 
     private fun theme() {

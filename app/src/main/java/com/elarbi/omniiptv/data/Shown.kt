@@ -32,6 +32,9 @@ object Shown {
         return l
     }
 
+    @Synchronized
+    fun invalidate() { cache = null }
+
     /** Affiche une seule source. */
     fun showOnly(id: String) {
         Prefs.shownSources = emptySet()

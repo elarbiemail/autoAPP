@@ -46,6 +46,7 @@ import com.elarbi.omniiptv.player.PlayerFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Locale
 
 @androidx.annotation.OptIn(markerClass = [UnstableApi::class])
@@ -204,16 +205,30 @@ class PlayerActivity : FragmentActivity() {
         val key = i.getStringExtra("key") ?: i.data?.getQueryParameter("key")
         overrideUrl = i.getStringExtra("url")
         overrideTitle = i.getStringExtra("title")
-        val ch = key?.let { Repo.findChannel(it) }
+        val ch = key?.let { Repo.findChannelQuick(it) }
         if (ch == null) {
-            Ui.toast(this, "Chaîne introuvable. Actualisez la source.")
-            finish()
+            // Chaîne absente des listes courtes (ouverture depuis l'accueil du téléviseur) :
+            // la liste de la source est lue en arrière-plan, sans bloquer l'écran.
+            if (key == null) { Ui.toast(this, "Chaîne introuvable. Actualisez la source."); finish(); return }
+            lifecycleScope.launch {
+                val found = withContext(Dispatchers.Default) {
+                    try {
+                        Repo.findChannel(key)?.let { c ->
+                            c to com.elarbi.omniiptv.data.Edits.view(c.sourceId).filter { it.group == c.group }.ifEmpty { listOf(c) }
+                        }
+                    } catch (e: Throwable) { null }
+                }
+                if (found == null) { Ui.toast(this@PlayerActivity, "Chaîne introuvable. Actualisez la source."); finish(); return@launch }
+                Repo.playContext = found.second
+                start(i)
+            }
             return
         }
         list = when {
             Repo.playContext.any { it.key == ch.key } -> Repo.playContext
             Repo.isFavorite(ch.key) -> Repo.favorites.values.toList()
-            else -> com.elarbi.omniiptv.data.Edits.view(ch.sourceId).filter { it.group == ch.group }.ifEmpty { listOf(ch) }
+            else -> com.elarbi.omniiptv.data.FavLists.lists().map { com.elarbi.omniiptv.data.FavLists.items(it.id) }
+                .firstOrNull { l -> l.any { it.key == ch.key } } ?: listOf(ch)
         }
         index = list.indexOfFirst { it.key == ch.key }.coerceAtLeast(0)
         previousIndex = -1

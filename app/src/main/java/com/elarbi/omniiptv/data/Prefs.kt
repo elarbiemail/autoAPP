@@ -56,6 +56,21 @@ object Prefs {
     fun tabSource(tab: String): String = p.getString("tabsrc_$tab", "") ?: ""
     fun setTabSource(tab: String, id: String) = p.edit().putString("tabsrc_$tab", id).apply()
 
+    /** Sources chargées sans films ni séries (portails trop volumineux pour l'appareil). */
+    var liveOnlySources: Set<String>
+        get() = p.getStringSet("liveOnly", emptySet())?.toSet() ?: emptySet()
+        set(v) = p.edit().putStringSet("liveOnly", v).apply()
+
+    /** Démarrage en cours (effacé quand l'écran est affiché) : sert à détecter un démarrage qui a échoué. */
+    var launching: Boolean
+        get() = p.getBoolean("launching", false)
+        set(v) { p.edit().putBoolean("launching", v).commit() }
+
+    /** Dernière mise à jour des rangées de l'accueil du téléviseur. */
+    var lastHomeSync: Long
+        get() = p.getLong("lastHomeSync", 0L)
+        set(v) = p.edit().putLong("lastHomeSync", v).apply()
+
     /** Dernière liste de favoris ouverte. */
     var favList: String
         get() = p.getString("favList", "fav") ?: "fav"

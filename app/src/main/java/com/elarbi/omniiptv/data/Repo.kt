@@ -8,6 +8,7 @@ import com.elarbi.omniiptv.model.Programme
 import com.elarbi.omniiptv.model.Source
 import com.elarbi.omniiptv.model.SourceType
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -181,9 +182,48 @@ object Repo {
         bump()
     }
 
-    @Synchronized
-    fun channels(sourceId: String): List<Channel> = channelCache.getOrPut(sourceId) {
-        try { JsonStream.readChannels(file("ch_$sourceId.json")) } catch (e: Exception) { Log.w("Repo", "liste", e); emptyList() }
+    /** Sources dont la liste n'a pas pu être chargée faute de mémoire. */
+    val loadFailed: MutableSet<String> = java.util.Collections.synchronizedSet(HashSet())
+
+    /** Liste déjà en mémoire (sans lecture du disque). */
+    fun cachedChannels(sourceId: String): List<Channel>? = synchronized(this) { channelCache[sourceId] }
+
+    /** Taille du fichier de la liste enregistrée (octets). */
+    fun listFileSize(sourceId: String): Long = file("ch_$sourceId.json").length()
+
+    /**
+     * Liste d'une source. Le fichier est lu hors du verrou général : une grosse liste qui se charge
+     * ne bloque pas le reste de l'application (favoris, écran, lecteur).
+     */
+    fun channels(sourceId: String): List<Channel> {
+        synchronized(this) { channelCache[sourceId]?.let { return it } }
+        val list = try {
+            JsonStream.readChannels(file("ch_$sourceId.json")).also { loadFailed.remove(sourceId) }
+        } catch (e: OutOfMemoryError) {
+            Log.w("Repo", "liste trop grosse", e)
+            loadFailed.add(sourceId)
+            return emptyList()
+        } catch (e: Exception) {
+            Log.w("Repo", "liste", e); emptyList()
+        }
+        synchronized(this) { return channelCache.getOrPut(sourceId) { list } }
+    }
+
+    /** Vide la liste enregistrée d'une source (et son guide) ; elle sera rechargée à la prochaine actualisation. */
+    fun clearList(sourceId: String) {
+        file("ch_$sourceId.json").delete()
+        file("epg_$sourceId.json").delete()
+        prefs.edit().remove("vodcounts_$sourceId").remove("lastrefresh_$sourceId").apply()
+        synchronized(this) { channelCache.remove(sourceId); epgCache.remove(sourceId) }
+        loadFailed.remove(sourceId)
+        Shown.invalidate()
+        bump()
+    }
+
+    /** Libère la mémoire des listes et guides (les fichiers restent enregistrés). */
+    fun trimMemory() {
+        synchronized(this) { channelCache.clear(); epgCache.clear() }
+        Shown.invalidate()
     }
 
     fun stalker(sourceId: String): StalkerClient = synchronized(stalkers) {
@@ -210,6 +250,8 @@ object Repo {
 
     private suspend fun refreshInner(s: Source, withEpg: Boolean): Int = withContext(Dispatchers.IO) {
         var autoEpg = ""
+        checkSpace()
+        val liveOnly = s.id in Prefs.liveOnlySources
         val old = channels(s.id)   // liste enregistrée, pour la comparaison
         val raw: List<Channel> = when (s.type) {
             SourceType.M3U -> {
@@ -217,12 +259,12 @@ object Repo {
                     input.bufferedReader(Charsets.UTF_8).useLines { lines -> M3uParser.parseLines(lines, s.id) }
                 }
                 autoEpg = r.epgUrl
-                r.channels
+                if (liveOnly) r.channels.filter { !it.isVod } else r.channels
             }
             SourceType.XTREAM -> {
                 val x = XtreamClient(s)
                 autoEpg = x.epgUrl()
-                x.channels()
+                x.channels(withVod = !liveOnly)
             }
             SourceType.STALKER -> {
                 synchronized(stalkers) { stalkers.remove(s.id) }
@@ -233,11 +275,11 @@ object Repo {
                 commit(s.id, live + previousVod)
                 prefs.edit().putLong("lastrefresh_${s.id}", System.currentTimeMillis()).apply()
                 val counts = vodCounts(s.id)
-                val vod = try {
+                val vod = if (liveOnly) emptyList() else try {
                     c.vod(previousVod, counts) { partial -> if (partial.size > previousVod.size) commit(s.id, live + partial) }
                 } catch (e: Exception) { Log.w("Repo", "stalker vod", e); emptyList() }
                 if (vod.isNotEmpty()) saveVodCounts(s.id, c.vodCounts)
-                live + vod.ifEmpty { previousVod }
+                if (liveOnly) live else live + vod.ifEmpty { previousVod }
             }
             SourceType.YOUTUBE -> return@withContext channels(s.id).size
             SourceType.TUNER -> TunerSource.channels(app)
@@ -253,6 +295,7 @@ object Repo {
         updateSnapshots(list)
         saveChannels("ch_${s.id}.json", list)
         synchronized(this@Repo) { channelCache[s.id] = list }
+        loadFailed.remove(s.id)
         syncSaved(s.id, list)
         if (autoEpg.isNotBlank()) prefs.edit().putString("autoepg_${s.id}", autoEpg).apply()
         prefs.edit().putLong("lastrefresh_${s.id}", System.currentTimeMillis()).apply()
@@ -282,8 +325,8 @@ object Repo {
         val chans = channels(s.id).filter { !it.isVod }.map { Edits.apply(it) }
         if (chans.isEmpty()) return@withContext
         val now = System.currentTimeMillis()
-        val from = now - 24 * 3600_000L
-        val to = now + 48 * 3600_000L
+        val from = now - 3 * 3600_000L
+        val to = now + 24 * 3600_000L
         val merged = HashMap<String, List<Programme>>()
         val icons = HashMap<String, String>()
         val index = ArrayList<Pair<String, String>>()
@@ -291,12 +334,9 @@ object Repo {
             try {
                 Loading.step("Guide TV du portail…")
                 val stk = stalker(s.id).epg()
+                // Guide du portail rangé une seule fois par chaîne (clé « stk:id », reconnue par epgKeys) :
+                // le recopier sous plusieurs clés doublait ou triplait sa place sur le disque.
                 merged.putAll(stk)
-                // Rattache aussi le guide du portail aux clés de chaque chaîne (xmltv_id, nom).
-                chans.forEach { c ->
-                    val id = c.key.substringAfter("|stk", "")
-                    stk["stk:$id"]?.let { l -> epgKeys(c).forEach { k -> merged.putIfAbsent(k, l) } }
-                }
             } catch (e: Exception) { Log.w("Repo", "stalker epg", e) }
         }
         if (s.type == SourceType.TUNER) merged.putAll(TunerSource.programmes(app, chans, from, to))
@@ -338,6 +378,7 @@ object Repo {
 
     fun epgKeys(ch: Channel): List<String> = listOfNotNull(
         ch.epgId.takeIf { it.isNotBlank() }?.lowercase(),
+        ch.key.substringAfter("|stk", "").takeIf { it.isNotEmpty() }?.let { "stk:$it" },
         "name:" + EpgNorm.norm(ch.name)
     )
 
@@ -381,9 +422,66 @@ object Repo {
         }
     }
 
-    @Synchronized
-    fun epg(sourceId: String): Map<String, List<Programme>> = epgCache.getOrPut(sourceId) {
-        try { JsonStream.readEpg(file("epg_$sourceId.json")) } catch (e: Exception) { emptyMap() }
+    private val epgLoading: MutableSet<String> = java.util.Collections.synchronizedSet(HashSet())
+
+    /**
+     * Guide d'une source. Sur le fil de l'écran, un guide pas encore en mémoire est chargé en arrière-plan
+     * (rien n'est bloqué) ; il apparaît au rafraîchissement suivant.
+     */
+    fun epg(sourceId: String): Map<String, List<Programme>> {
+        synchronized(this) { epgCache[sourceId]?.let { return it } }
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+            if (epgLoading.add(sourceId)) scope.launch {
+                try { epg(sourceId) } finally { epgLoading.remove(sourceId) }
+            }
+            return emptyMap()
+        }
+        val m = try { JsonStream.readEpg(file("epg_$sourceId.json")) } catch (e: Throwable) { emptyMap() }
+        synchronized(this) { return epgCache.getOrPut(sourceId) { m } }
+    }
+
+    // ---------- Stockage ----------
+    data class Storage(val lists: Long, val guides: Long, val images: Long, val free: Long)
+
+    private fun dirSize(f: File): Long = if (f.isDirectory) (f.listFiles() ?: emptyArray()).sumOf { dirSize(it) } else f.length()
+
+    fun storage(): Storage {
+        val files = app.filesDir.listFiles() ?: emptyArray()
+        return Storage(
+            lists = files.filter { it.name.startsWith("ch_") || it.name.startsWith("favlist_") }.sumOf { it.length() },
+            guides = files.filter { it.name.startsWith("epg") }.sumOf { it.length() },
+            images = dirSize(app.cacheDir),
+            free = app.filesDir.usableSpace
+        )
+    }
+
+    /** Supprime les fichiers inutiles : écritures interrompues, fichiers de sources supprimées. */
+    fun cleanup() {
+        val ids = sources.map { it.id }.toHashSet() + YT_ID
+        for (f in app.filesDir.listFiles() ?: emptyArray()) {
+            val n = f.name
+            if (n.endsWith(".tmp")) { f.delete(); continue }
+            val m = Regex("^(?:ch|epg|epgicons|epgindex|edits|free)_(.+?)\\.(?:json|m3u)$").find(n) ?: continue
+            if (m.groupValues[1] !in ids) f.delete()
+        }
+    }
+
+    /** Libère de l'espace : guides TV (retéléchargés à la prochaine actualisation) et images en cache. */
+    fun freeSpace() {
+        for (f in app.filesDir.listFiles() ?: emptyArray()) if (f.name.startsWith("epg")) f.delete()
+        synchronized(this) { epgCache.clear() }
+        try { com.bumptech.glide.Glide.get(app).clearDiskCache() } catch (_: Throwable) {}
+        app.cacheDir.listFiles()?.forEach { it.deleteRecursively() }
+        cleanup()
+    }
+
+    /** Refuse d'écrire une grosse liste quand le téléviseur n'a presque plus de place. */
+    fun checkSpace(minMb: Long = 40) {
+        val free = app.filesDir.usableSpace / 1048576
+        if (free < minMb) throw IOException(
+            "Stockage du téléviseur presque plein ($free Mo libres). Libérez de l'espace " +
+                "(Sources > Libérer de l'espace, ou désinstallez des applications), puis réessayez. La liste enregistrée est conservée."
+        )
     }
 
 
@@ -475,7 +573,18 @@ object Repo {
         FavLists.sync(sourceId, byKey)
     }
 
+    /** Recherche dans les listes courtes seulement (lecture, favoris, récents, reprises, listes) : instantané. */
+    fun findChannelQuick(key: String): Channel? {
+        playContext.firstOrNull { it.key == key }?.let { return it }
+        favorites[key]?.let { return Edits.apply(it) }
+        recents.firstOrNull { it.key == key }?.let { return Edits.apply(it) }
+        Library.find(key)?.let { return it }
+        for (l in FavLists.lists()) FavLists.items(l.id).firstOrNull { it.key == key }?.let { return Edits.apply(it) }
+        return cachedChannels(key.substringBefore('|'))?.firstOrNull { it.key == key }?.let { Edits.apply(it) }
+    }
+
     fun findChannel(key: String): Channel? {
+        findChannelQuick(key)?.let { return it }
         playContext.firstOrNull { it.key == key }?.let { return it }
         favorites[key]?.let { return Edits.apply(it) }
         recents.firstOrNull { it.key == key }?.let { return Edits.apply(it) }

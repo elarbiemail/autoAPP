@@ -93,7 +93,13 @@ class TvHomeActivity : FragmentActivity() {
     private var railExpanded = false
     private var builtVersion = -1
     private var lastBack = 0L
-    private val viewCache = HashMap<String, List<Channel>>()
+    /** Listes préparées par source (calculées en arrière-plan, jamais sur le fil de l'écran). */
+    private val viewCache = java.util.concurrent.ConcurrentHashMap<String, List<Channel>>()
+    private val fullCache = java.util.concurrent.ConcurrentHashMap<String, List<Channel>>()
+    /** Liste de Repo d'où vient chaque entrée de viewCache (pour savoir si une actualisation l'a remplacée). */
+    private val viewOrigin = java.util.concurrent.ConcurrentHashMap<String, Any>()
+    private var loadingSec: Sec? = null
+    private var safeMode = false
 
     // Direct
     private var liveShown: List<Channel> = emptyList()
@@ -188,11 +194,47 @@ class TvHomeActivity : FragmentActivity() {
 
         root.viewTreeObserver.addOnGlobalFocusChangeListener { _, now -> setRailExpanded(now != null && now.parent === rail) }
 
-        sec = initialSection()
+        // Démarrage précédent interrompu (liste trop grosse, mémoire ou stockage plein) : mode sans échec.
+        safeMode = savedInstanceState == null && Prefs.launching
+        Prefs.launching = true
+        sec = if (safeMode) Sec.SOURCES else initialSection()
         builtVersion = Repo.version
         show(sec)
         handler.post(tick)
-        if (savedInstanceState == null) startup()
+        handler.postDelayed({ Prefs.launching = false }, 8000)
+        if (safeMode) handler.post { safeModeDialog() }
+        else if (savedInstanceState == null) startup()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        Prefs.launching = false
+    }
+
+    private fun safeModeDialog() {
+        val st = Repo.storage()
+        AlertDialog.Builder(this).setTitle("Démarrage sans échec")
+            .setMessage(
+                "Omni IPTV s'est fermée lors du dernier démarrage. C'est en général une liste trop volumineuse pour la mémoire " +
+                    "du téléviseur, ou un stockage plein.\n\n" +
+                    "Espace libre : ${st.free / 1048576} Mo • listes : ${st.lists / 1048576} Mo • guides TV : ${st.guides / 1048576} Mo • " +
+                    "images : ${st.images / 1048576} Mo\n\n" +
+                    "Dans Sources, choisissez un portail puis « Chaînes seulement (sans films ni séries) » ou « Vider la liste enregistrée ». " +
+                    "Vous pouvez aussi libérer de l'espace maintenant."
+            )
+            .setPositiveButton("Libérer de l'espace") { _, _ -> freeSpace() }
+            .setNegativeButton("Fermer", null).show()
+    }
+
+    private fun freeSpace() {
+        lifecycleScope.launch {
+            val before = withContext(Dispatchers.IO) { Repo.storage().free }
+            withContext(Dispatchers.IO) { try { Repo.freeSpace() } catch (_: Throwable) {} }
+            val after = withContext(Dispatchers.IO) { Repo.storage().free }
+            Ui.toast(this@TvHomeActivity, "Espace libéré : ${(after - before).coerceAtLeast(0) / 1048576} Mo. " +
+                "Les guides TV seront retéléchargés à la prochaine actualisation.")
+            if (sec == Sec.SOURCES) show(Sec.SOURCES)
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -216,7 +258,8 @@ class TvHomeActivity : FragmentActivity() {
 
     /** Comportement au lancement : actualisation, guide / multi-écran, dernière chaîne. */
     private fun startup() {
-        HomeSyncWorker.runNow(this)
+        // Mise à jour des rangées de l'accueil du téléviseur : au plus toutes les 30 minutes au lancement.
+        if (System.currentTimeMillis() - Prefs.lastHomeSync > 30 * 60_000L) HomeSyncWorker.runNow(this)
         if (intent?.data?.host == "home") return
         if (Prefs.refreshOnStart) Repo.activeSource()?.let { s ->
             Repo.scope.launch { try { Repo.refresh(s) } catch (_: Exception) {} }
@@ -275,24 +318,102 @@ class TvHomeActivity : FragmentActivity() {
         status.text = ""
         content.removeAllViews()
         liveList = null
-        val v = when (s) {
-            Sec.HOME -> buildHome()
-            Sec.LIVE -> buildLive()
-            Sec.MOVIES -> buildVod(series = false)
-            Sec.SERIES -> buildVod(series = true)
-            Sec.FAV -> buildFav()
-            Sec.LISTS -> buildManager()
-            Sec.SOURCES -> buildSources()
-            else -> View(this)
+        // Les listes nécessaires sont préparées en arrière-plan ; l'écran reste fluide pendant ce temps.
+        val need = neededSources(s).filter { !viewCache.containsKey(it) }
+        if (need.isNotEmpty()) { showLoading(s, need); return }
+        val v = try {
+            when (s) {
+                Sec.HOME -> buildHome()
+                Sec.LIVE -> buildLive()
+                Sec.MOVIES -> buildVod(series = false)
+                Sec.SERIES -> buildVod(series = true)
+                Sec.FAV -> buildFav()
+                Sec.LISTS -> buildManager()
+                Sec.SOURCES -> buildSources()
+                else -> View(this)
+            }
+        } catch (e: Throwable) {
+            if (e is OutOfMemoryError) { viewCache.clear(); fullCache.clear(); Repo.trimMemory() }
+            text(17f, Color.WHITE, false).apply {
+                text = "Impossible d'afficher cette section : ${if (e is OutOfMemoryError) "mémoire du téléviseur insuffisante pour cette liste" else e.message}.\n\n" +
+                    "Dans Sources, choisissez « Chaînes seulement (sans films ni séries) » pour le portail concerné, ou videz sa liste."
+                setPadding(dp(8), dp(24), dp(8), 0)
+            }
         }
         content.addView(v, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
     }
+
+    /** Sources dont la liste doit être prête pour afficher la section. */
+    private fun neededSources(s: Sec): List<String> = when (s) {
+        Sec.LIVE -> tabSourceIds("live")
+        Sec.MOVIES -> tabSourceIds("movies")
+        Sec.SERIES -> tabSourceIds("series")
+        Sec.LISTS -> listOfNotNull(mgrSource?.takeIf { id -> Repo.sources.any { it.id == id } } ?: Repo.sources.firstOrNull()?.id)
+        else -> emptyList()
+    }
+
+    private fun showLoading(s: Sec, need: List<String>) {
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER }
+        val names = need.joinToString { id -> "« ${srcName(id)} » (${Repo.listFileSize(id) / 1048576 + 1} Mo)" }
+        box.addView(ProgressBar(this))
+        box.addView(text(17f, Color.WHITE, false).apply {
+            text = "Chargement de $names…"; gravity = Gravity.CENTER; setPadding(0, dp(12), 0, 0)
+        })
+        content.addView(box, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        if (loadingSec == s) return
+        loadingSec = s
+        lifecycleScope.launch {
+            val failed = withContext(Dispatchers.Default) {
+                val f = ArrayList<String>()
+                for (id in need) {
+                    try {
+                        val origin = Repo.channels(id)
+                        if (id in Repo.loadFailed) f += id
+                        viewCache[id] = Edits.view(id).filter { !Prefs.isHiddenAdult(it) }
+                        viewOrigin[id] = origin
+                        if (s == Sec.LISTS) fullCache[id] = Edits.view(id, true)
+                        if (s == Sec.LIVE) Repo.epg(id)
+                    } catch (e: Throwable) {
+                        f += id
+                        viewCache[id] = emptyList()
+                        if (e is OutOfMemoryError) Repo.trimMemory()
+                    }
+                }
+                f
+            }
+            loadingSec = null
+            if (isFinishing) return@launch
+            if (sec == s) show(s)
+            if (failed.isNotEmpty()) tooBig(failed)
+        }
+    }
+
+    /** Liste trop volumineuse pour la mémoire de ce téléviseur : propose de garder seulement les chaînes. */
+    private fun tooBig(ids: List<String>) {
+        val src = Repo.sources.firstOrNull { it.id == ids.first() } ?: return
+        AlertDialog.Builder(this).setTitle("Liste trop volumineuse")
+            .setMessage("La liste de « ${src.name} » (${Repo.listFileSize(src.id) / 1048576} Mo) ne tient pas dans la mémoire de ce téléviseur.\n\n" +
+                "Solution : la recharger avec les chaînes seulement (sans films ni séries), ou la vider.")
+            .setPositiveButton("Chaînes seulement") { _, _ ->
+                Prefs.liveOnlySources = Prefs.liveOnlySources + src.id
+                Repo.clearList(src.id)
+                refreshSources(listOf(src))
+            }
+            .setNeutralButton("Vider la liste") { _, _ -> Repo.clearList(src.id); dropCache(src.id); show(sec) }
+            .setNegativeButton("Fermer", null).show()
+    }
+
+    private fun dropCache(id: String) { viewCache.remove(id); fullCache.remove(id); viewOrigin.remove(id) }
 
     override fun onResume() {
         super.onResume()
         if (builtVersion != Repo.version) {
             builtVersion = Repo.version
-            viewCache.clear()
+            // Seules les listes remplacées (actualisation, mémoire libérée) sont recalculées.
+            for (id in viewCache.keys.toList()) {
+                val cur = Repo.cachedChannels(id)
+                if (cur == null || cur !== viewOrigin[id]) dropCache(id)
+            }
             val f = currentFocus
             val inRail = f != null && f.parent === rail
             show(sec)
@@ -351,9 +472,8 @@ class TvHomeActivity : FragmentActivity() {
     // ======================================================================
     // Données des onglets
     // ======================================================================
-    private fun srcView(id: String): List<Channel> = viewCache.getOrPut(id) {
-        try { Edits.view(id).filter { !Prefs.isHiddenAdult(it) } } catch (e: Exception) { emptyList() }
-    }
+    /** Liste préparée d'une source (vide si elle n'est pas encore chargée : jamais de lecture sur le fil de l'écran). */
+    private fun srcView(id: String): List<Channel> = viewCache[id] ?: emptyList()
 
     private fun inTab(tab: String, ch: Channel): Boolean = when (tab) {
         "live" -> !ch.isVod
@@ -385,12 +505,13 @@ class TvHomeActivity : FragmentActivity() {
     /** Onglets de sources en haut de Direct, Films et Séries. */
     private fun sourceChips(tab: String) {
         val sel = selectedSource(tab)
-        val counts = Repo.sources.associate { s -> s.id to srcView(s.id).count { inTab(tab, it) } }
+        // Nombre d'éléments seulement pour les listes déjà chargées (on ne charge rien pour les afficher).
+        val counts = Repo.sources.associate { s -> s.id to (viewCache[s.id]?.count { inTab(tab, it) } ?: -1) }
         chip("Toutes les sources", sel == null) { Prefs.setTabSource(tab, ""); reshow() }
         for (s in Repo.sources) {
-            val n = counts[s.id] ?: 0
+            val n = counts[s.id] ?: -1
             if (n == 0 && s.id != sel) continue
-            chip("${typeIcon(s.type)} ${s.name}  ${fmt(n)}", s.id == sel) { Prefs.setTabSource(tab, s.id); reshow() }
+            chip("${typeIcon(s.type)} ${s.name}" + if (n > 0) "  ${fmt(n)}" else "", s.id == sel) { Prefs.setTabSource(tab, s.id); reshow() }
         }
         chip("＋ Source", false) { addSourceDialog() }
     }
@@ -467,8 +588,7 @@ class TvHomeActivity : FragmentActivity() {
         row("▶ Continuer à regarder", Library.resume.values.toList())
         for (l in FavLists.lists()) row("★ ${l.name}", FavLists.items(l.id))
         row("🕘 Regardées récemment", Repo.recents.toList())
-        row("🎬 Films", tabItems("movies").take(60))
-        row("🎞 Séries", tabItems("series").take(60))
+
         if (box.childCount == 0) box.addView(TextView(this).apply {
             text = "Ouvrez Direct, Films ou Séries dans la barre de gauche. Vos listes de favoris, reprises et chaînes " +
                 "récentes apparaîtront ici."
@@ -806,6 +926,7 @@ class TvHomeActivity : FragmentActivity() {
     private fun listMenu(l: FavLists.FavList) {
         val opts = ArrayList<Pair<String, () -> Unit>>()
         opts += "▶ Lire la liste" to { FavLists.items(l.id).firstOrNull()?.let { play(it, FavLists.items(l.id)) } }
+        opts += "📺 Afficher sur l'accueil du téléviseur" to { homeRow("fav", l.id, "Omni · ${l.name}") }
         if (l.id != FavLists.DEFAULT) {
             opts += "✎ Renommer" to { askText("Renommer la liste", l.name) { FavLists.rename(l.id, it); reshow() } }
             opts += "↑ Placer plus haut" to { FavLists.moveList(l.id, -1); reshow() }
@@ -839,7 +960,7 @@ class TvHomeActivity : FragmentActivity() {
         }
         chip("Réinitialiser", false) {
             confirm("Annuler toutes les personnalisations de « ${src.name} » (noms, ordre, catégories masquées) ?") {
-                Edits.reset(sid); invalidate()
+                Edits.reset(sid); invalidate(sid)
             }
         }
 
@@ -850,7 +971,7 @@ class TvHomeActivity : FragmentActivity() {
         row.addView(column("Sources", srcList), LinearLayout.LayoutParams(dp(220), ViewGroup.LayoutParams.MATCH_PARENT))
 
         // 2. Catégories (y compris masquées) groupées par section
-        val full = try { Edits.view(sid, true) } catch (e: Exception) { emptyList() }
+        val full = fullCache[sid] ?: emptyList()
         val sections = listOf("live" to "📺", "movies" to "🎬", "series" to "🎞")
         data class G(val tab: String, val group: String, val count: Int)
         val groups = ArrayList<G>()
@@ -914,10 +1035,11 @@ class TvHomeActivity : FragmentActivity() {
         return row
     }
 
-    private fun invalidate() {
+    /** Réaffiche après une modification ; [sid] : source dont la liste personnalisée a changé. */
+    private fun invalidate(sid: String? = null) {
         Repo.bump()
         builtVersion = Repo.version
-        viewCache.clear()
+        if (sid != null) dropCache(sid)
         val f = currentFocus
         show(sec)
         if (f != null && f.parent === rail) railItems[sec]?.requestFocus() else focusContent()
@@ -927,13 +1049,13 @@ class TvHomeActivity : FragmentActivity() {
     private fun groupMenu(sid: String, g: String) {
         val opts = ArrayList<Pair<String, () -> Unit>>()
         val hidden = Edits.isGroupHidden(sid, g)
-        opts += (if (hidden) "👁 Afficher la catégorie" else "🚫 Masquer la catégorie") to { Edits.toggleGroupHidden(sid, g); invalidate() }
+        opts += (if (hidden) "👁 Afficher la catégorie" else "🚫 Masquer la catégorie") to { Edits.toggleGroupHidden(sid, g); invalidate(sid) }
         opts += "✎ Renommer la catégorie" to {
-            askText("Renommer « $g »", g) { n -> Edits.renameGroup(sid, g, n); mgrGroup = n; invalidate() }
+            askText("Renommer « $g »", g) { n -> Edits.renameGroup(sid, g, n); mgrGroup = n; invalidate(sid) }
         }
-        opts += "↑ Monter la catégorie" to { Edits.moveGroup(sid, g, -1); invalidate() }
-        opts += "↓ Descendre la catégorie" to { Edits.moveGroup(sid, g, 1); invalidate() }
-        opts += "⇈ Placer en tête" to { Edits.moveGroup(sid, g, -10_000); invalidate() }
+        opts += "↑ Monter la catégorie" to { Edits.moveGroup(sid, g, -1); invalidate(sid) }
+        opts += "↓ Descendre la catégorie" to { Edits.moveGroup(sid, g, 1); invalidate(sid) }
+        opts += "⇈ Placer en tête" to { Edits.moveGroup(sid, g, -10_000); invalidate(sid) }
         val locked = g in Prefs.lockedGroups
         opts += (if (locked) "🔓 Déverrouiller (code parental)" else "🔒 Verrouiller (code parental)") to {
             fun go() {
@@ -942,6 +1064,9 @@ class TvHomeActivity : FragmentActivity() {
                 invalidate()
             }
             if (locked) Ui.askPin(this) { go() } else go()
+        }
+        opts += "📺 Afficher sur l'accueil du téléviseur" to {
+            homeRow("group", sid + "\u0001" + g, "Omni · " + g.removePrefix("Films · ").removePrefix("Séries · "))
         }
         opts += "★ Ajouter toute la catégorie à une liste…" to {
             val items = (try { Edits.view(sid) } catch (e: Exception) { emptyList() }).filter { it.group == g }
@@ -955,17 +1080,17 @@ class TvHomeActivity : FragmentActivity() {
         val opts = ArrayList<Pair<String, () -> Unit>>()
         opts += "▶ Lire" to { play(ch, list.filter { !Edits.isHidden(it) }) }
         opts += "★ Listes de favoris…" to { favDialog(ch) }
-        opts += "✎ Renommer" to { askText("Nom affiché", ch.name) { n -> Edits.update(sid, ch.key) { it.name = n }; invalidate() } }
+        opts += "✎ Renommer" to { askText("Nom affiché", ch.name) { n -> Edits.update(sid, ch.key) { it.name = n }; invalidate(sid) } }
         val hidden = Edits.isHidden(ch)
-        opts += (if (hidden) "👁 Afficher" else "🚫 Masquer") to { Edits.update(sid, ch.key) { it.hidden = !hidden }; invalidate() }
-        opts += "↑ Monter" to { Edits.moveChannel(sid, ch.key, -1); invalidate() }
-        opts += "↓ Descendre" to { Edits.moveChannel(sid, ch.key, 1); invalidate() }
-        opts += "⇈ Placer en tête de la catégorie" to { Edits.moveChannel(sid, ch.key, -10_000); invalidate() }
+        opts += (if (hidden) "👁 Afficher" else "🚫 Masquer") to { Edits.update(sid, ch.key) { it.hidden = !hidden }; invalidate(sid) }
+        opts += "↑ Monter" to { Edits.moveChannel(sid, ch.key, -1); invalidate(sid) }
+        opts += "↓ Descendre" to { Edits.moveChannel(sid, ch.key, 1); invalidate(sid) }
+        opts += "⇈ Placer en tête de la catégorie" to { Edits.moveChannel(sid, ch.key, -10_000); invalidate(sid) }
         opts += "➜ Changer de catégorie…" to { moveToGroup(ch) }
         opts += "🖼 Logo (adresse d'image)…" to {
-            askText("Adresse du logo", ch.logo) { u -> Edits.update(sid, ch.key) { it.logo = u.ifBlank { null } }; invalidate() }
+            askText("Adresse du logo", ch.logo) { u -> Edits.update(sid, ch.key) { it.logo = u.ifBlank { null } }; invalidate(sid) }
         }
-        opts += "↺ Réinitialiser cet élément" to { Edits.clear(sid, ch.key); invalidate() }
+        opts += "↺ Réinitialiser cet élément" to { Edits.clear(sid, ch.key); invalidate(sid) }
         menu(ch.name, opts)
     }
 
@@ -975,8 +1100,8 @@ class TvHomeActivity : FragmentActivity() {
         AlertDialog.Builder(this).setTitle("Déplacer « ${ch.name} » vers")
             .setItems(labels.toTypedArray()) { _, w ->
                 if (w == groups.size) askText("Nom de la nouvelle catégorie", "") { n ->
-                    Edits.update(ch.sourceId, ch.key) { it.group = n }; invalidate()
-                } else { Edits.update(ch.sourceId, ch.key) { it.group = groups[w] }; invalidate() }
+                    Edits.update(ch.sourceId, ch.key) { it.group = n }; invalidate(ch.sourceId)
+                } else { Edits.update(ch.sourceId, ch.key) { it.group = groups[w] }; invalidate(ch.sourceId) }
             }.setNegativeButton("Annuler", null).show()
     }
 
@@ -986,10 +1111,16 @@ class TvHomeActivity : FragmentActivity() {
     private fun buildSources(): View {
         chip("＋ Ajouter une source", false) { addSourceDialog() }
         chip("⟳ Tout actualiser", false) { refreshAll(onlyShown = false) }
+        chip("🧹 Libérer de l'espace", false) { freeSpace() }
         chip("Dépôts", false) { startActivity(Intent(this, ReposActivity::class.java)) }
         chip("Listes gratuites", false) { startActivity(Intent(this, FreeSearchActivity::class.java)) }
         val sources = Repo.sources
-        status.text = "${sources.size} source(s)  •  OK sur une source : ouvrir, actualiser, modifier, inclure dans « Toutes », supprimer"
+        status.text = "${sources.size} source(s)  •  OK sur une source : ouvrir, actualiser, modifier, supprimer…"
+        lifecycleScope.launch {
+            val st = withContext(Dispatchers.IO) { Repo.storage() }
+            if (sec == Sec.SOURCES) status.text = "${sources.size} source(s)  •  Stockage : ${st.free / 1048576} Mo libres  •  " +
+                "listes ${st.lists / 1048576} Mo, guides TV ${st.guides / 1048576} Mo, images ${st.images / 1048576} Mo"
+        }
         if (sources.isEmpty()) return welcome()
         val list = listView()
         list.adapter = object : BaseAdapter() {
@@ -1006,13 +1137,14 @@ class TvHomeActivity : FragmentActivity() {
                     addView(text(14f, HINT, false))
                     addView(text(13f, HINT, false))
                 }
-                val all = srcView(s.id)
-                val live = all.count { !it.isVod }
-                val series = all.count { it.isSeries }
-                val movies = all.count { it.isMovie }
+                val all = viewCache[s.id]
                 val inAll = s.id !in Prefs.hiddenSources
-                (v.getChildAt(0) as TextView).text = "${typeIcon(s.type)}  ${s.name}" + if (!inAll) "   (hors « Toutes les sources »)" else ""
-                (v.getChildAt(1) as TextView).text = "${s.typeLabel}  •  ${fmt(live)} chaînes  •  ${fmt(movies)} films  •  ${fmt(series)} séries"
+                val liveOnly = s.id in Prefs.liveOnlySources
+                (v.getChildAt(0) as TextView).text = "${typeIcon(s.type)}  ${s.name}" +
+                    (if (!inAll) "   (hors « Toutes les sources »)" else "") + (if (liveOnly) "   (chaînes seulement)" else "")
+                (v.getChildAt(1) as TextView).text = "${s.typeLabel}  •  " + if (all != null)
+                    "${fmt(all.count { !it.isVod })} chaînes  •  ${fmt(all.count { it.isMovie })} films  •  ${fmt(all.count { it.isSeries })} séries"
+                else "liste enregistrée : ${Repo.listFileSize(s.id) / 1024} Ko (chargée à l'ouverture de Direct, Films ou Séries)"
                 val last = Repo.lastRefresh(s.id)
                 (v.getChildAt(2) as TextView).text = (if (last > 0) "Mise à jour : " +
                     SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.FRANCE).format(Date(last)) else "Jamais actualisée") +
@@ -1042,13 +1174,49 @@ class TvHomeActivity : FragmentActivity() {
             invalidate()
         }
         opts += "🗂 Gérer les catégories et chaînes" to { mgrSource = s.id; mgrGroup = null; show(Sec.LISTS); focusContent() }
+        if (s.type == SourceType.XTREAM || s.type == SourceType.STALKER || s.type == SourceType.M3U) {
+            val liveOnly = s.id in Prefs.liveOnlySources
+            opts += (if (liveOnly) "🎬 Charger aussi les films et séries" else "📺 Chaînes seulement (sans films ni séries)") to {
+                Prefs.liveOnlySources = if (liveOnly) Prefs.liveOnlySources - s.id else Prefs.liveOnlySources + s.id
+                if (!liveOnly) { Repo.clearList(s.id); dropCache(s.id) }
+                refreshSources(listOf(s))
+            }
+        }
+        opts += "🧹 Vider la liste enregistrée" to {
+            confirm("Vider la liste enregistrée de « ${s.name} » ? Elle sera rechargée à la prochaine actualisation.") {
+                Repo.clearList(s.id); dropCache(s.id); invalidate()
+            }
+        }
         if (s.type == SourceType.STALKER) opts += "🩺 Infos du compte et diagnostic" to { diagnostic(s) }
         opts += "🗑 Supprimer la source" to {
             confirm("Supprimer « ${s.name} » et sa liste enregistrée ?") {
-                Repo.removeSource(s.id); Prefs.hiddenSources = Prefs.hiddenSources - s.id; invalidate()
+                Repo.removeSource(s.id); Prefs.hiddenSources = Prefs.hiddenSources - s.id; dropCache(s.id); invalidate()
             }
         }
         menu(s.name, opts)
+    }
+
+    /** Crée (ou réactive) une rangée sur l'accueil Google TV et demande au téléviseur de l'afficher. */
+    private fun homeRow(kind: String, arg: String, name: String) {
+        Ui.toast(this, "Création de la rangée « $name »…")
+        lifecycleScope.launch {
+            val id = withContext(Dispatchers.IO) {
+                val ctx = this@TvHomeActivity
+                val existing = com.elarbi.omniiptv.home.HomeRows.rows(ctx).firstOrNull { it.kind == kind && it.arg == arg }
+                val r = existing?.copy(enabled = true)?.also { com.elarbi.omniiptv.home.HomeRows.update(ctx, it) }
+                    ?: com.elarbi.omniiptv.home.HomeRows.add(ctx, kind, arg, name)
+                try { com.elarbi.omniiptv.home.HomeScreen.sync(ctx) } catch (_: Throwable) {}
+                com.elarbi.omniiptv.home.HomeScreen.ensureChannel(ctx, r.id, r.name, false)
+            }
+            if (id == null) { Ui.toast(this@TvHomeActivity, "Cet appareil ne gère pas les rangées d'accueil."); return@launch }
+            try {
+                startActivity(Intent(androidx.tvprovider.media.tv.TvContractCompat.ACTION_REQUEST_CHANNEL_BROWSABLE)
+                    .putExtra(androidx.tvprovider.media.tv.TvContractCompat.EXTRA_CHANNEL_ID, id))
+            } catch (e: Exception) {
+                Ui.toast(this@TvHomeActivity, "Rangée créée : ajoutez-la depuis l'accueil (Personnaliser les chaînes > Omni IPTV). " +
+                    "Réglages > Écran d'accueil du TV pour la personnaliser.")
+            }
+        }
     }
 
     private fun addSourceDialog() {
@@ -1134,8 +1302,8 @@ class TvHomeActivity : FragmentActivity() {
                 Ui.toast(this, "Sur ce téléviseur, les favoris et films en cours apparaissent dans la rangée Omni IPTV de l'accueil.")
         }
         if (Repo.sources.any { it.id == ch.sourceId }) {
-            opts += "✎ Renommer" to { askText("Nom affiché", ch.name) { n -> Edits.update(ch.sourceId, ch.key) { it.name = n }; invalidate() } }
-            opts += "🚫 Masquer" to { Edits.update(ch.sourceId, ch.key) { it.hidden = true }; invalidate() }
+            opts += "✎ Renommer" to { askText("Nom affiché", ch.name) { n -> Edits.update(ch.sourceId, ch.key) { it.name = n }; invalidate(ch.sourceId) } }
+            opts += "🚫 Masquer" to { Edits.update(ch.sourceId, ch.key) { it.hidden = true }; invalidate(ch.sourceId) }
             opts += "🗂 Gérer sa catégorie « ${ch.group} »" to { mgrSource = ch.sourceId; mgrGroup = ch.group; show(Sec.LISTS); focusContent() }
         }
         menu(ch.name, opts)

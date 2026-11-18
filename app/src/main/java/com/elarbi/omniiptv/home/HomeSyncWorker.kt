@@ -31,9 +31,10 @@ class HomeSyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
                 try { Repo.refreshEpg(s) } catch (_: Exception) {}
             }
         }
-        try { HomeScreen.sync(applicationContext) } catch (_: Exception) {}
-        try { TifSync.sync(applicationContext) } catch (_: Exception) {}
-        try { Shortcuts.update(applicationContext) } catch (_: Exception) {}
+        try { HomeScreen.sync(applicationContext) } catch (_: Throwable) {}
+        if (TifSync.enabled(applicationContext)) try { TifSync.sync(applicationContext) } catch (_: Throwable) {}
+        try { Shortcuts.update(applicationContext) } catch (_: Throwable) {}
+        com.elarbi.omniiptv.data.Prefs.lastHomeSync = System.currentTimeMillis()
         return Result.success()
     }
 

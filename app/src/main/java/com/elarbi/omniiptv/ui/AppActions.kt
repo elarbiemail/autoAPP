@@ -46,8 +46,13 @@ object AppActions {
             }
             MainFragment.A_HOME_LIVE -> a.lifecycleScope.launch {
                 val chId = withContext(Dispatchers.IO) {
+                    val rows = com.elarbi.omniiptv.home.HomeRows.rows(a)
+                    val now = rows.firstOrNull { it.kind == "now" }
+                    if (now == null) com.elarbi.omniiptv.home.HomeRows.add(a, "now", "", HomeScreen.NAME_LIVE)
+                    else if (!now.enabled) com.elarbi.omniiptv.home.HomeRows.update(a, now.copy(enabled = true))
                     HomeScreen.sync(a)
-                    HomeScreen.ensureChannel(a, HomeScreen.SLOT_LIVE, HomeScreen.NAME_LIVE, false)
+                    val r = com.elarbi.omniiptv.home.HomeRows.rows(a).first { it.kind == "now" }
+                    HomeScreen.ensureChannel(a, r.id, r.name, false)
                 }
                 if (chId == null) { Ui.toast(a, "Cet appareil ne gère pas les rangées d'accueil TV."); return@launch }
                 try {
