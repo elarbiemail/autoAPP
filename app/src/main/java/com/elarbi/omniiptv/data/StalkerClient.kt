@@ -323,7 +323,7 @@ class StalkerClient(private val s: Source) {
 
     // ---------------- Films et séries ----------------
     /** Films et séries du portail (limité pour garder un chargement rapide). */
-    fun vod(): List<Channel> {
+    fun vod(onBatch: ((List<Channel>) -> Unit)? = null): List<Channel> {
         login()
         val out = ArrayList<Channel>()
         var budget = MAX_VOD_PAGES
@@ -357,6 +357,8 @@ class StalkerClient(private val s: Source) {
                     )
                 }
             }
+            // Enregistrement progressif, catégorie par catégorie.
+            onBatch?.invoke(ArrayList(out))
         }
         return out
     }

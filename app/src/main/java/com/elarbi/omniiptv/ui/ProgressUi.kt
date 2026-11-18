@@ -8,6 +8,7 @@ import android.widget.TextView
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.lifecycleScope
 import com.elarbi.omniiptv.data.Loading
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -25,6 +26,7 @@ object ProgressUi {
         box.addView(info)
         val dlg = AlertDialog.Builder(a).setTitle(title).setView(box).setCancelable(false)
             .setPositiveButton("Continuer en arrière-plan", null).create()
+        // Le chargement continue même si l'on ferme cette fenêtre ou que l'on quitte l'écran.
         dlg.show()
         val poll = a.lifecycleScope.launch {
             while (isActive) {
@@ -39,8 +41,21 @@ object ProgressUi {
                 delay(250)
             }
         }
-        a.lifecycleScope.launch {
+        val app = a.applicationContext
+        // Le travail tourne hors de l'écran : il continue (et s'enregistre) même si l'on quitte l'écran.
+        val job = com.elarbi.omniiptv.data.Repo.scope.async {
             val r = runCatching { block() }
+            if (a.isDestroyed || a.isFinishing) {
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    android.widget.Toast.makeText(app,
+                        if (r.isSuccess) "Chargement terminé et enregistré : $title" else "Chargement interrompu : ${r.exceptionOrNull()?.message}",
+                        android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
+            r
+        }
+        a.lifecycleScope.launch {
+            val r = job.await()
             poll.cancel()
             try { dlg.dismiss() } catch (_: Exception) {}
             done(r)

@@ -38,7 +38,12 @@ class SourcesActivity : FragmentActivity() {
         val shownIds = com.elarbi.omniiptv.data.Shown.sources().map { it.id }
         Repo.sources.forEach { s ->
             val mark = if (s.id in shownIds) "● " else "○ "
-            container.addView(Ui.button(this, "$mark${s.name}  —  ${s.typeLabel}  (${Repo.channels(s.id).size} chaînes)") { options(s) })
+            val last = Repo.lastRefresh(s.id)
+            val saved = if (last > 0) "enregistrée le " + java.text.SimpleDateFormat("dd/MM à HH:mm", java.util.Locale.FRANCE).format(java.util.Date(last)) else "non chargée"
+            val all = Repo.channels(s.id)
+            val vodN = all.count { it.isVod }
+            val counts = "${all.size - vodN} chaînes" + if (vodN > 0) " + $vodN films/séries" else ""
+            container.addView(Ui.button(this, "$mark${s.name}  —  ${s.typeLabel}\n$counts • liste $saved") { options(s) })
         }
         container.addView(Ui.button(this, "☰ Afficher plusieurs sources ensemble…") { SourcePicker.pickSeveral(this) { render() } })
         container.addView(Ui.button(this, "＋ Ajouter une liste M3U") { add(SourceType.M3U) })

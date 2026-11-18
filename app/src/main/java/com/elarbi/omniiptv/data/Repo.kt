@@ -33,6 +33,19 @@ object Repo {
     var version = 0
         private set
 
+    /** Travaux longs (chargement des sources) indépendants des écrans : ils continuent si l'on quitte l'écran. */
+    val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
+
+    /** Date du dernier chargement réussi d'une source. */
+    fun lastRefresh(sourceId: String): Long = prefs.getLong("lastrefresh_$sourceId", 0L)
+
+    /** Enregistre immédiatement une liste (permet de conserver un chargement partiel). */
+    fun commit(sourceId: String, list: List<Channel>) {
+        saveChannels("ch_$sourceId.json", list)
+        synchronized(this) { channelCache[sourceId] = list }
+        bump()
+    }
+
     /** Liste de chaînes utilisée pour le zapping dans le lecteur. */
     var playContext: List<Channel> = emptyList()
 
@@ -163,7 +176,15 @@ object Repo {
             SourceType.STALKER -> {
                 synchronized(stalkers) { stalkers.remove(s.id) }
                 val c = stalker(s.id)
-                c.channels() + try { c.vod() } catch (e: Exception) { Log.w("Repo", "stalker vod", e); emptyList() }
+                val previousVod = channels(s.id).filter { it.isVod }
+                val live = c.channels()
+                // Les chaînes sont enregistrées tout de suite : elles restent disponibles même si la suite est interrompue.
+                commit(s.id, live + previousVod)
+                prefs.edit().putLong("lastrefresh_${s.id}", System.currentTimeMillis()).apply()
+                val vod = try {
+                    c.vod { partial -> if (partial.size > previousVod.size) commit(s.id, live + partial) }
+                } catch (e: Exception) { Log.w("Repo", "stalker vod", e); emptyList() }
+                live + vod.ifEmpty { previousVod }
             }
             SourceType.YOUTUBE -> return@withContext channels(s.id).size
             SourceType.TUNER -> TunerSource.channels(app)
@@ -174,6 +195,7 @@ object Repo {
         saveChannels("ch_${s.id}.json", list)
         synchronized(this@Repo) { channelCache[s.id] = list }
         if (autoEpg.isNotBlank()) prefs.edit().putString("autoepg_${s.id}", autoEpg).apply()
+        prefs.edit().putLong("lastrefresh_${s.id}", System.currentTimeMillis()).apply()
         bump()
         if (withEpg) {
             Loading.step("Guide TV…")

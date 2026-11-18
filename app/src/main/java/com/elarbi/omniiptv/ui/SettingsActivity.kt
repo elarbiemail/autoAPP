@@ -118,6 +118,10 @@ class SettingsActivity : FragmentActivity() {
         title("Démarrage")
         item("Lancer la dernière chaîne regardée : ${onOff(Prefs.autoPlayLast)}") { Prefs.autoPlayLast = !Prefs.autoPlayLast }
         item("Actualiser la source au démarrage : ${onOff(Prefs.refreshOnStart)}") { Prefs.refreshOnStart = !Prefs.refreshOnStart }
+        val refreshLabels = mapOf(0 to "jamais (liste conservée)", 1 to "chaque jour", 3 to "tous les 3 jours", 7 to "chaque semaine")
+        item("Actualisation automatique des listes : ${refreshLabels[Prefs.autoRefreshDays] ?: "jamais"}") {
+            Prefs.autoRefreshDays = when (Prefs.autoRefreshDays) { 0 -> 1; 1 -> 3; 3 -> 7; else -> 0 }
+        }
 
         title("Lecteur")
         val bufLabel = mapOf("low" to "faible (zapping rapide)", "normal" to "normal", "high" to "élevé (connexion instable)")

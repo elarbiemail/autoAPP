@@ -11,14 +11,23 @@ android {
         applicationId = "com.elarbi.omniiptv"
         minSdk = 26
         targetSdk = 34
-        versionCode = 13
-        versionName = "1.1.3"
+        versionCode = 14
+        versionName = "1.2.0"
+    }
+    // Clé de signature FIXE : chaque nouvelle version s'installe par-dessus l'ancienne
+    // (portails, listes de chaînes, favoris et réglages conservés).
+    signingConfigs {
+        create("omni") {
+            storeFile = file("omni-release.jks")
+            storePassword = "omniiptv2026"
+            keyAlias = "omni"
+            keyPassword = "omniiptv2026"
+        }
     }
     buildTypes {
         release {
             isMinifyEnabled = false
-            // Signée avec la clé de debug : APK directement installable.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("omni")
         }
     }
     compileOptions {

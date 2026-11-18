@@ -32,6 +32,11 @@ object Prefs {
         get() = p.getBoolean("tunneling", false)
         set(v) = p.edit().putBoolean("tunneling", v).apply()
 
+    /** Actualisation automatique des listes : 0 = jamais (liste conservée), sinon tous les N jours. */
+    var autoRefreshDays: Int
+        get() = p.getInt("autoRefreshDays", 0)
+        set(v) = p.edit().putInt("autoRefreshDays", v).apply()
+
     var autoReconnect: Boolean
         get() = p.getBoolean("autoReconnect", true)
         set(v) = p.edit().putBoolean("autoReconnect", v).apply()

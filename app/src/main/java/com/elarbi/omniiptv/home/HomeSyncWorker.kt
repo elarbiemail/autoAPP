@@ -18,6 +18,13 @@ import java.util.concurrent.TimeUnit
 /** Met à jour le guide TV puis les rangées d'accueil et l'onglet Direct. */
 class HomeSyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
     override suspend fun doWork(): Result {
+        // Actualisation automatique des listes (désactivée par défaut : la liste chargée est conservée).
+        val days = com.elarbi.omniiptv.data.Prefs.autoRefreshDays
+        if (days > 0) {
+            Repo.sources.filter { it.type != com.elarbi.omniiptv.model.SourceType.YOUTUBE && it.type != com.elarbi.omniiptv.model.SourceType.TUNER }
+                .filter { System.currentTimeMillis() - Repo.lastRefresh(it.id) > days * 24 * 3600_000L }
+                .forEach { s -> try { Repo.refresh(s) } catch (_: Exception) {} }
+        }
         if (inputData.getBoolean("epg", true)) {
             val ids = (listOfNotNull(Repo.activeSourceId) + Repo.favorites.values.map { it.sourceId }).distinct()
             ids.mapNotNull { id -> Repo.sources.firstOrNull { it.id == id } }.forEach { s ->
