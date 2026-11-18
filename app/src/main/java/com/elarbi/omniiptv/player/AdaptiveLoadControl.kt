@@ -58,8 +58,8 @@ class AdaptiveLoadControl(
     }
 
     override fun onTracksSelected(
-        timeline: Timeline, mediaPeriodId: MediaPeriodId, renderers: Array<out Renderer>,
-        trackGroups: TrackGroupArray, trackSelections: Array<out ExoTrackSelection?>
+        timeline: Timeline, mediaPeriodId: MediaPeriodId, renderers: Array<Renderer>,
+        trackGroups: TrackGroupArray, trackSelections: Array<ExoTrackSelection?>
     ) {
         var bps = 0L
         var h = 0
