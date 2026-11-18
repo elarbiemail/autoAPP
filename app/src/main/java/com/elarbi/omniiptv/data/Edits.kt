@@ -142,9 +142,10 @@ object Edits {
     fun moveGroup(sid: String, g: String, delta: Int) {
         val order = groups(sid).toMutableList()
         val i = order.indexOf(g)
-        val j = i + delta
-        if (i < 0 || j < 0 || j >= order.size) return
-        order[i] = order[j].also { order[j] = order[i] }
+        if (i < 0 || order.isEmpty()) return
+        val j = (i + delta).coerceIn(0, order.size - 1)
+        if (i == j) return
+        order.add(j, order.removeAt(i))
         synchronized(this) {
             val se = of(sid)
             se.groupOrder.clear()
@@ -170,12 +171,12 @@ object Edits {
         val ch = all.firstOrNull { it.key == key } ?: return
         val inGroup = all.filter { it.group == ch.group }
         val i = inGroup.indexOfFirst { it.key == key }
-        val j = i + delta
-        if (j < 0 || j >= inGroup.size) return
+        val j = (i + delta).coerceIn(0, inGroup.size - 1)
+        if (i < 0 || i == j) return
+        val order = inGroup.toMutableList()
+        order.add(j, order.removeAt(i))
         synchronized(this) {
-            inGroup.forEachIndexed { n, c -> edit(sid, c.key).pos = n.toDouble() }
-            edit(sid, inGroup[i].key).pos = j.toDouble()
-            edit(sid, inGroup[j].key).pos = i.toDouble()
+            order.forEachIndexed { n, c -> edit(sid, c.key).pos = n.toDouble() }
         }
         save(sid)
     }

@@ -11,8 +11,10 @@ android {
         applicationId = "com.elarbi.omniiptv"
         minSdk = 26
         targetSdk = 34
-        versionCode = 19
-        versionName = "1.2.5"
+        versionCode = 20
+        versionName = "1.3.0"
+        // Téléviseurs Google TV / Android TV et téléphones : processeurs ARM (garde l'APK léger malgré FFmpeg).
+        ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a") }
     }
     // Clé de signature FIXE : chaque nouvelle version s'installe par-dessus l'ancienne
     // (portails, listes de chaînes, favoris et réglages conservés).
@@ -57,6 +59,8 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer-rtsp:$media3")
     implementation("androidx.media3:media3-datasource-rtmp:$media3")
     implementation("androidx.media3:media3-ui:$media3")
+    // Décodeur audio FFmpeg (AC3, E-AC3, DTS, MP2, TrueHD…) pour les chaînes dont le son n'est pas lu par le téléviseur.
+    implementation("org.jellyfin.media3:media3-ffmpeg-decoder:$media3+1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.google.code.gson:gson:2.11.0")

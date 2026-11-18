@@ -29,6 +29,7 @@ import com.elarbi.omniiptv.data.Repo
 import com.elarbi.omniiptv.home.HomeSyncWorker
 import com.elarbi.omniiptv.model.Channel
 import com.elarbi.omniiptv.model.isSeries
+import com.elarbi.omniiptv.model.isMovie
 
 /**
  * Accueil optimisé pour téléphone et tablette :
@@ -216,7 +217,7 @@ class MobileActivity : FragmentActivity() {
         val all = com.elarbi.omniiptv.data.Shown.channels()
         content = when (tab) {
             "live" -> all.filter { !it.isVod }
-            "movies" -> all.filter { it.isVod && !it.isSeries }
+            "movies" -> all.filter { it.isMovie }
             "series" -> all.filter { it.isSeries }
             else -> when (chip) {
                 "Continuer" -> Library.resume.values.toList()

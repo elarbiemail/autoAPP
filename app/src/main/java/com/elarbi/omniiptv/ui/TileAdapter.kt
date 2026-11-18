@@ -23,7 +23,13 @@ class TileAdapter(private val ctx: Context, var items: List<Channel>) : BaseAdap
 
     override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
         val v = convertView ?: LayoutInflater.from(ctx).inflate(R.layout.item_tile, parent, false)
-        val ch = items[position]
+        bind(ctx, v, items[position], position)
+        return v
+    }
+
+    companion object {
+    /** Remplit une vignette (utilisé aussi par les rangées de l'accueil). */
+    fun bind(ctx: Context, v: View, ch: Channel, position: Int) {
         v.findViewById<TextView>(R.id.tile_name).text = ch.name
         val badge = v.findViewById<TextView>(R.id.tile_badge)
         badge.text = when {
@@ -50,6 +56,6 @@ class TileAdapter(private val ctx: Context, var items: List<Channel>) : BaseAdap
         val img = v.findViewById<ImageView>(R.id.tile_img)
         if (ch.logo.isNotBlank()) Glide.with(ctx).load(ch.logo).placeholder(R.drawable.ic_tv).error(R.drawable.ic_tv).into(img)
         else { Glide.with(ctx).clear(img); img.setImageResource(R.drawable.ic_tv) }
-        return v
+    }
     }
 }

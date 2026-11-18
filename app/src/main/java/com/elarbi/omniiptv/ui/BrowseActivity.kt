@@ -27,6 +27,7 @@ import com.elarbi.omniiptv.home.HomeSyncWorker
 import com.elarbi.omniiptv.model.Channel
 import com.elarbi.omniiptv.model.SourceType
 import com.elarbi.omniiptv.model.isSeries
+import com.elarbi.omniiptv.model.isMovie
 
 /**
  * Médiathèque (TV et grand écran) :
@@ -176,7 +177,7 @@ class BrowseActivity : FragmentActivity() {
         val all = if (sid != null) Edits.view(sid) else Shown.channels()
         content = when (tab) {
             "live" -> all.filter { !it.isVod }
-            "movies" -> all.filter { it.isVod && !it.isSeries && !it.key.contains("|E") }
+            "movies" -> all.filter { it.isMovie }
             "series" -> all.filter { it.isSeries }
             "fav" -> Repo.favorites.values.map { Edits.apply(it) }
             "resume" -> Library.resume.values.toList()

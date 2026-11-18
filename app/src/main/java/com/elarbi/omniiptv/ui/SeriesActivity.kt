@@ -58,7 +58,8 @@ class SeriesActivity : FragmentActivity() {
         lifecycleScope.launch {
             try {
                 episodes = withContext(Dispatchers.IO) {
-                    if (s.url.startsWith("stkseries:")) Repo.stalker(src.id).episodes(s.url, s.name)
+                    if (s.url.startsWith(com.elarbi.omniiptv.data.SeriesGrouper.PREFIX)) com.elarbi.omniiptv.data.SeriesGrouper.episodes(s)
+                    else if (s.url.startsWith("stkseries:")) Repo.stalker(src.id).episodes(s.url, s.name)
                     else XtreamClient(src).episodes(s.url.removePrefix("xtseries:"), s.name)
                 }
                 adapter.items = episodes

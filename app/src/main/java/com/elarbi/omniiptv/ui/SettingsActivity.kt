@@ -3,7 +3,16 @@ package com.elarbi.omniiptv.ui
 import android.app.AlertDialog
 import android.os.Bundle
 import android.text.InputType
+import android.graphics.Color
+import android.graphics.Typeface
+import android.view.View
+import android.view.ViewGroup
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import android.widget.EditText
+import android.widget.ListView
+import androidx.core.content.ContextCompat
+import com.elarbi.omniiptv.player.PlayerFactory
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -16,143 +25,257 @@ import com.elarbi.omniiptv.data.Repo
 import com.elarbi.omniiptv.data.TunerSource
 import com.elarbi.omniiptv.model.SourceType
 
-/** Réglages : démarrage, lecteur, contrôle parental, rappels, sauvegarde. */
+/**
+ * Réglages en deux volets, comme les réglages d'Android TV :
+ * à gauche les rubriques, à droite les options de la rubrique (titre + valeur actuelle).
+ */
 class SettingsActivity : FragmentActivity() {
     private lateinit var box: LinearLayout
+    private lateinit var cats: ListView
+    private lateinit var paneTitle: TextView
+    private lateinit var scroll: ScrollView
+    private var cat = 0
 
-    private val views = listOf(
-        "rows" to "Accueil par rangées", "list" to "Liste", "grid" to "Grille",
-        "guide" to "Guide TV", "multi" to "Multi-écran"
+    private val categories = listOf(
+        "🔌  Sources", "🗂  Listes et guide TV", "▶  Lecture et décodage", "🖥  Affichage et démarrage",
+        "🏠  Écran d'accueil du TV", "🎨  Thème", "🔒  Contrôle parental", "⏰  Rappels", "💾  Sauvegarde et aide"
+    )
+
+    private val startViews = listOf(
+        "home" to "Accueil", "live" to "Direct", "movies" to "Films", "series" to "Séries",
+        "fav" to "Mes listes", "guide" to "Guide TV", "multi" to "Multi-écran"
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val scroll = ScrollView(this)
-        box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            resources.getDimensionPixelSize(com.elarbi.omniiptv.R.dimen.page_pad).let { pad -> setPadding(pad, Ui.dp(this@SettingsActivity, 20), pad, Ui.dp(this@SettingsActivity, 28)) }
+        val d = { v: Int -> Ui.dp(this, v) }
+        val root = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(d(28), d(22), d(28), d(16)) }
+        val left = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        left.addView(TextView(this).apply { text = "⚙ Réglages"; textSize = 28f; setTextColor(Color.WHITE); setTypeface(typeface, Typeface.BOLD) })
+        left.addView(TextView(this).apply {
+            text = "Omni IPTV ${try { packageManager.getPackageInfo(packageName, 0).versionName } catch (e: Exception) { "" }}"
+            setTextColor(HINT); setPadding(0, d(2), 0, d(14))
+        })
+        cats = ListView(this).apply {
+            divider = null
+            dividerHeight = d(3)
+            selector = ContextCompat.getDrawable(this@SettingsActivity, com.elarbi.omniiptv.R.drawable.bg_item)
+            choiceMode = ListView.CHOICE_MODE_SINGLE
+            adapter = ArrayAdapter(this@SettingsActivity, com.elarbi.omniiptv.R.layout.item_text, categories)
         }
+        left.addView(cats, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        root.addView(left, LinearLayout.LayoutParams(d(310), ViewGroup.LayoutParams.MATCH_PARENT))
+
+        val right = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(d(30), 0, 0, 0) }
+        paneTitle = TextView(this).apply { textSize = 22f; setTextColor(ThemeManager.accent); setTypeface(typeface, Typeface.BOLD); setPadding(0, d(6), 0, d(10)) }
+        right.addView(paneTitle)
+        scroll = ScrollView(this)
+        box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 0, d(8), d(20)) }
         scroll.addView(box)
-        setContentView(scroll)
+        right.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        root.addView(right, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
+        setContentView(root)
+
+        cat = intent.getIntExtra("cat", 0).coerceIn(0, categories.size - 1)
+        cats.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                if (pos != cat) { cat = pos; render() }
+            }
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+        cats.setOnItemClickListener { _, _, pos, _ -> cat = pos; render(); box.getChildAt(0)?.let { if (!it.isFocusable) box.getChildAt(1) else it }?.requestFocus() }
+        cats.setItemChecked(cat, true)
+        cats.setSelection(cat)
         render()
     }
 
-    private fun title(t: String) = box.addView(TextView(this).apply {
-        text = t; textSize = 20f; setTextColor(ThemeManager.accent); setPadding(0, Ui.dp(this@SettingsActivity, 16), 0, Ui.dp(this@SettingsActivity, 4))
+    override fun onResume() {
+        super.onResume()
+        render()
+    }
+
+    // ---------------- Lignes d'options ----------------
+    private fun row(title: String, value: String, action: () -> Unit) {
+        val d = { v: Int -> Ui.dp(this, v) }
+        val v = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            isFocusable = true
+            isClickable = true
+            background = ContextCompat.getDrawable(this@SettingsActivity, com.elarbi.omniiptv.R.drawable.bg_item)
+            setPadding(d(16), d(11), d(16), d(11))
+            addView(TextView(this@SettingsActivity).apply { text = title; textSize = 18f; setTextColor(Color.WHITE) })
+            if (value.isNotBlank()) addView(TextView(this@SettingsActivity).apply { text = value; textSize = 14f; setTextColor(HINT) })
+            setOnClickListener {
+                val idx = box.indexOfChild(this)
+                action()
+                if (!isFinishing) { render(); box.getChildAt(idx)?.requestFocus() }
+            }
+        }
+        box.addView(v, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = d(4) })
+    }
+
+    private fun toggle(title: String, value: Boolean, desc: String = "", set: (Boolean) -> Unit) =
+        row(title, (if (value) "✅ Activé" else "⬜ Désactivé") + if (desc.isNotBlank()) "  —  $desc" else "") { set(!value) }
+
+    private fun choice(title: String, options: List<Pair<String, String>>, current: String, set: (String) -> Unit) {
+        val label = options.firstOrNull { it.first == current }?.second ?: options.first().second
+        row(title, label) {
+            val i = options.indexOfFirst { it.first == current }.coerceAtLeast(0)
+            AlertDialog.Builder(this).setTitle(title)
+                .setSingleChoiceItems(options.map { it.second }.toTypedArray(), i) { dlg, w -> set(options[w].first); dlg.dismiss(); render() }
+                .setNegativeButton("Annuler", null).show()
+        }
+    }
+
+    private fun link(title: String, desc: String = "", action: () -> Unit) = row("$title  ›", desc, action)
+
+    private fun note(t: String) = box.addView(TextView(this).apply {
+        text = t; textSize = 14f; setTextColor(HINT); setPadding(Ui.dp(this@SettingsActivity, 4), Ui.dp(this@SettingsActivity, 4), 0, Ui.dp(this@SettingsActivity, 8))
     })
 
-    private fun item(label: String, action: () -> Unit) = box.addView(Ui.button(this, label) { action(); render() })
+    private fun go(cls: Class<*>) = startActivity(android.content.Intent(this, cls))
 
-    private fun go(label: String, cls: Class<*>) =
-        box.addView(Ui.button(this, label) { startActivity(android.content.Intent(this, cls)) })
+    private fun hub(section: String) = startActivity(
+        android.content.Intent(this, TvHomeActivity::class.java).putExtra("section", section)
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP)
+    )
 
-    private fun add(label: String, t: SourceType) =
-        box.addView(Ui.button(this, label) { startActivity(android.content.Intent(this, AddSourceActivity::class.java).putExtra("type", t.name)) })
-
-    private fun browse(label: String, mode: String) =
-        box.addView(Ui.button(this, label) { startActivity(android.content.Intent(this, BrowseActivity::class.java).putExtra("mode", mode)) })
+    private fun add(t: SourceType) = startActivity(android.content.Intent(this, AddSourceActivity::class.java).putExtra("type", t.name))
 
     /** Action exécutée par l'accueil de l'application (actualisation, rangées, tuner…). */
-    private fun main(label: String, id: Int) =
-        box.addView(Ui.button(this, label) { AppActions.run(this, id) { tunerPermission.launch(TunerSource.permissions) } })
+    private fun main(id: Int) = AppActions.run(this, id) { tunerPermission.launch(TunerSource.permissions) }
 
     private val tunerPermission = registerForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
     ) { _ -> AppActions.loadTuner(this) }
 
-    private fun onOff(b: Boolean) = if (b) "activé" else "désactivé"
-
+    // ---------------- Rubriques ----------------
     private fun render() {
         box.removeAllViews()
-        box.addView(TextView(this).apply { text = "⚙ Réglages"; textSize = 28f; setTextColor(0xFFFFFFFF.toInt()) })
-        box.addView(TextView(this).apply {
-            text = "Source affichée : ${Repo.activeSource()?.name ?: "aucune"}  •  ${Repo.sources.size} source(s)"
-            setTextColor(0x99FFFFFF.toInt())
-        })
+        paneTitle.text = categories[cat].substringAfter("  ")
+        when (cat) {
+            0 -> sources()
+            1 -> lists()
+            2 -> playback()
+            3 -> display()
+            4 -> homeScreen()
+            5 -> theme()
+            6 -> parental()
+            7 -> reminders()
+            else -> backupHelp()
+        }
+    }
 
-        title("Sources et contenus")
-        go("Mes sources (afficher, actualiser, modifier, supprimer)", SourcesActivity::class.java)
-        box.addView(Ui.button(this, "✎ Modifier un serveur (M3U, Xtream, portail MAC)") { SourcePicker.editOne(this) })
-        item("Sources affichées : ${com.elarbi.omniiptv.data.Shown.title()}") { SourcePicker.pickSeveral(this) { render() } }
-        add("＋ Ajouter une liste M3U", SourceType.M3U)
-        add("＋ Ajouter un compte Xtream Codes", SourceType.XTREAM)
-        add("＋ Ajouter un portail MAC (Stalker)", SourceType.STALKER)
-        main("＋ Chaînes du téléviseur (TNT, satellite, câble)", MainFragment.A_TUNER)
-        item("Entrées du téléviseur (HDMI, antenne, satellite…)") { tvInputs() }
-        go("Chaînes YouTube Live", YoutubeActivity::class.java)
-        go("Dépôts (installer des listes en un clic)", ReposActivity::class.java)
-        go("Listes gratuites et légales", FreeSearchActivity::class.java)
-        main("Actualiser la source affichée (chaînes et guide)", MainFragment.A_REFRESH)
+    private fun sources() {
+        note("${Repo.sources.size} source(s) : ${Repo.sources.joinToString { it.name }.ifBlank { "aucune" }}")
+        link("Gérer les sources", "Ajouter, modifier, supprimer, actualiser, inclure dans « Toutes les sources »") { hub("SOURCES") }
+        link("＋ Portail MAC (Stalker / Ministra)") { add(SourceType.STALKER) }
+        link("＋ Compte Xtream Codes") { add(SourceType.XTREAM) }
+        link("＋ Liste M3U / M3U8") { add(SourceType.M3U) }
+        link("✎ Modifier un serveur", "Adresse, identifiants, adresse MAC, modèle de boîtier") { SourcePicker.editOne(this) }
+        link("Chaînes YouTube Live") { go(YoutubeActivity::class.java) }
+        link("Chaînes du téléviseur", "TNT, satellite, câble enregistrées sur le téléviseur") { main(MainFragment.A_TUNER) }
+        link("Entrées du téléviseur", "HDMI, antenne, satellite…") { tvInputs() }
+        link("Dépôts", "Installer des listes en un clic") { go(ReposActivity::class.java) }
+        link("Listes gratuites et légales") { go(FreeSearchActivity::class.java) }
+    }
 
-        title("Chaînes et guide TV")
-        go("Gestionnaire de chaînes (ordre, groupes, noms, logos)", ChannelManagerActivity::class.java)
-        go("Guides TV (EPG automatique et supplémentaire)", EpgActivity::class.java)
-        go("Rechercher une chaîne ou un film", SearchActivity::class.java)
+    private fun lists() {
+        link("Gestion des listes", "Catégories et chaînes de chaque source : masquer, renommer, ordonner, verrouiller") { hub("LISTS") }
+        link("Mes listes de favoris", "Plusieurs listes avec des noms personnalisés") { hub("FAV") }
+        link("Outils avancés", "Logos et identifiants de guide TV chaîne par chaîne") { go(ChannelManagerActivity::class.java) }
+        link("Guides TV (EPG)", "Guide automatique de chaque source et guides supplémentaires") { go(EpgActivity::class.java) }
+        choice("Actualisation automatique des listes",
+            listOf("0" to "Jamais (liste enregistrée conservée)", "1" to "Chaque jour", "3" to "Tous les 3 jours", "7" to "Chaque semaine"),
+            Prefs.autoRefreshDays.toString()) { Prefs.autoRefreshDays = it.toInt() }
+        toggle("Actualiser la source au démarrage", Prefs.refreshOnStart) { Prefs.refreshOnStart = it }
+        link("Actualiser la source affichée", "Chaînes et guide TV") { main(MainFragment.A_REFRESH) }
+        link("Réinitialiser les personnalisations de la source affichée") {
+            Repo.activeSourceId?.let { Edits.reset(it) }
+            Ui.toast(this, "Personnalisations réinitialisées")
+        }
+    }
 
-        title("Affichage")
-        go("Guide TV en grille", GuideActivity::class.java)
-        browse("Vue liste", "list")
-        browse("Vue grille", "grid")
-        go("Multi-écran (4 chaînes)", MultiViewActivity::class.java)
-        val uiLabels = mapOf("auto" to "automatique", "tv" to "téléviseur", "phone" to "téléphone / tablette")
-        item("Interface : ${uiLabels[Prefs.uiMode]} (redémarre l'application)") {
-            Prefs.uiMode = when (Prefs.uiMode) { "auto" -> "phone"; "phone" -> "tv"; else -> "auto" }
+    private fun playback() {
+        note(PlayerFactory.describe(this))
+        choice("Mémoire tampon", listOf(
+            "auto" to "Automatique (selon la mémoire de l'appareil) — recommandé",
+            "low" to "Zapping rapide : démarre après 0,5 s, tampon 3–15 s",
+            "normal" to "Équilibré : démarre après 1 s, tampon 10–40 s",
+            "high" to "Connexion instable : démarre après 2 s, tampon 25–90 s",
+            "max" to "Connexion très instable : démarre après 3 s, tampon 50–180 s"
+        ), Prefs.buffer) { Prefs.buffer = it }
+        choice("Décodage", listOf(
+            "auto" to "Automatique : matériel, avec secours logiciel (FFmpeg) si le téléviseur ne sait pas lire le son",
+            "hw" to "Matériel seulement (le plus économe)",
+            "sw" to "Son décodé par FFmpeg en priorité (AC3, E-AC3, DTS, MP2 : à essayer si pas de son)"
+        ), Prefs.decoder) { Prefs.decoder = it }
+        choice("Résolution maximale", listOf(
+            "0" to "Sans limite", "2160" to "4K (2160p)", "1080" to "Full HD (1080p)", "720" to "HD (720p) — appareils modestes",
+            "576" to "SD (576p) — connexion faible"
+        ), Prefs.maxHeight.toString()) { Prefs.maxHeight = it.toInt() }
+        choice("Langue audio préférée", listOf(
+            "" to "Langue du téléviseur", "fr" to "Français", "ar" to "Arabe", "en" to "Anglais", "es" to "Espagnol",
+            "de" to "Allemand", "it" to "Italien", "tr" to "Turc", "pt" to "Portugais"
+        ), Prefs.audioLang) { Prefs.audioLang = it }
+        toggle("Mode tunnel", Prefs.tunneling, "image confiée au téléviseur, plus fluide sur certains modèles") { Prefs.tunneling = it }
+        toggle("Reconnexion automatique en cas de coupure", Prefs.autoReconnect) { Prefs.autoReconnect = it }
+        choice("Format d'image par défaut", listOf("0" to "Adapter", "1" to "Zoom (remplir l'écran)", "2" to "Étirer"),
+            Prefs.aspect.toString()) { Prefs.aspect = it.toInt() }
+        toggle("Aperçu vidéo dans Direct", Prefs.livePreview, "la chaîne sélectionnée joue dans le panneau de droite") { Prefs.livePreview = it }
+        toggle("Heure dans le bandeau du lecteur", Prefs.showClock) { Prefs.showClock = it }
+        note("Les changements s'appliquent à la prochaine chaîne ouverte.")
+    }
+
+    private fun display() {
+        val uiLabels = listOf("auto" to "Automatique", "tv" to "Téléviseur", "phone" to "Téléphone / tablette")
+        choice("Interface", uiLabels, Prefs.uiMode) {
+            Prefs.uiMode = it
             startActivity(android.content.Intent(this, MainActivity::class.java)
                 .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK))
         }
-        item("Vue à l'ouverture : ${views.first { it.first == Prefs.startView }.second}") {
-            val i = views.indexOfFirst { it.first == Prefs.startView }
-            Prefs.startView = views[(i + 1) % views.size].first
-        }
+        val sv = when (Prefs.startView) { "rows" -> "home"; "list", "grid" -> "live"; else -> Prefs.startView }
+        choice("À l'ouverture de l'application", startViews, sv) { Prefs.startView = it }
+        toggle("Lancer la dernière chaîne regardée", Prefs.autoPlayLast) { Prefs.autoPlayLast = it }
+        link("Guide TV en grille") { go(GuideActivity::class.java) }
+        link("Multi-écran (4 chaînes)") { go(MultiViewActivity::class.java) }
+    }
 
-        title("Écran d'accueil du téléviseur")
-        main("Rangée Omni IPTV : mettre à jour et explications", MainFragment.A_HOME)
-        main("Ajouter la rangée « En ce moment »", MainFragment.A_HOME_LIVE)
-        main("Publier les chaînes dans l'onglet Direct", MainFragment.A_LIVE_TAB)
+    private fun homeScreen() {
+        note("Rangées de programmes sur l'écran d'accueil Google TV, comme YouTube ou CloudStream.")
+        link("Rangée Omni IPTV", "Mettre à jour et explications") { main(MainFragment.A_HOME) }
+        link("Ajouter la rangée « En ce moment »") { main(MainFragment.A_HOME_LIVE) }
+        link("Publier les chaînes dans l'onglet Direct") { main(MainFragment.A_LIVE_TAB) }
+    }
 
-        title("Thème")
+    private fun theme() {
         val preset = ThemeManager.presets.firstOrNull { it.second == Prefs.themeBg && it.third == Prefs.themeAccent }?.first ?: "personnalisé"
-        item("Thème : $preset  (changer)") { themePresets() }
-        item("Couleur de fond : ${ThemeManager.bg().label}") { themePick(true) }
-        item("Couleur d'accent : ${ThemeManager.accentDef().label}") { themePick(false) }
+        row("Thème prêt à l'emploi", preset) { themePresets() }
+        row("Couleur de fond", ThemeManager.bg().label) { themePick(true) }
+        row("Couleur d'accent", ThemeManager.accentDef().label) { themePick(false) }
+    }
 
-        title("Démarrage")
-        item("Lancer la dernière chaîne regardée : ${onOff(Prefs.autoPlayLast)}") { Prefs.autoPlayLast = !Prefs.autoPlayLast }
-        item("Actualiser la source au démarrage : ${onOff(Prefs.refreshOnStart)}") { Prefs.refreshOnStart = !Prefs.refreshOnStart }
-        val refreshLabels = mapOf(0 to "jamais (liste conservée)", 1 to "chaque jour", 3 to "tous les 3 jours", 7 to "chaque semaine")
-        item("Actualisation automatique des listes : ${refreshLabels[Prefs.autoRefreshDays] ?: "jamais"}") {
-            Prefs.autoRefreshDays = when (Prefs.autoRefreshDays) { 0 -> 1; 1 -> 3; 3 -> 7; else -> 0 }
-        }
+    private fun parental() {
+        row(if (Prefs.pin.isBlank()) "Définir un code parental" else "Changer ou supprimer le code parental",
+            if (Prefs.pin.isBlank()) "Aucun code" else "Code défini") { pinDialog() }
+        toggle("Masquer les catégories pour adultes", Prefs.hideAdult) { Prefs.hideAdult = it; Repo.bump() }
+        row("Groupes verrouillés", "${Prefs.lockedGroups.size} groupe(s) — les groupes adultes le sont d'office avec un code") { lockGroups() }
+    }
 
-        title("Lecteur")
-        val bufLabel = mapOf("low" to "faible (zapping rapide)", "normal" to "normal", "high" to "élevé (connexion instable)")
-        item("Mémoire tampon : ${bufLabel[Prefs.buffer]}") {
-            Prefs.buffer = when (Prefs.buffer) { "low" -> "normal"; "normal" -> "high"; else -> "low" }
-        }
-        item("Reconnexion automatique en cas de coupure : ${onOff(Prefs.autoReconnect)}") { Prefs.autoReconnect = !Prefs.autoReconnect }
-        item("Mode tunnel (lecture plus fluide sur certains téléviseurs) : ${onOff(Prefs.tunneling)}") { Prefs.tunneling = !Prefs.tunneling }
-        val aspects = listOf("adapter", "zoom", "étirer")
-        item("Format d'image par défaut : ${aspects[Prefs.aspect.coerceIn(0, 2)]}") { Prefs.aspect = (Prefs.aspect + 1) % 3 }
-        item("Afficher l'heure dans le bandeau : ${onOff(Prefs.showClock)}") { Prefs.showClock = !Prefs.showClock }
-
-        title("Contrôle parental")
-        item(if (Prefs.pin.isBlank()) "Définir un code parental" else "Changer ou supprimer le code parental") { pinDialog() }
-        item("Masquer les catégories pour adultes : ${onOff(Prefs.hideAdult)}") { Prefs.hideAdult = !Prefs.hideAdult }
-        item("Groupes verrouillés : ${Prefs.lockedGroups.size} (les groupes adultes le sont d'office avec un code)") { lockGroups() }
-
-        title("Rappels de programmes")
+    private fun reminders() {
         val rem = Reminders.list()
-        if (rem.isEmpty()) box.addView(TextView(this).apply { text = "Aucun rappel. Programmez-en depuis le Guide TV (OK sur un programme à venir)."; setTextColor(0x99FFFFFF.toInt()) })
+        if (rem.isEmpty()) note("Aucun rappel. Programmez-en depuis le Guide TV (OK sur un programme à venir).")
         rem.sortedBy { it.start }.forEach { r ->
-            item("⏰ ${Ui.hm(r.start)} — ${r.title} (${r.channelName}) : OK pour annuler") { Reminders.toggle(this, r) }
+            row("⏰ ${Ui.hm(r.start)} — ${r.title}", "${r.channelName} • OK pour annuler") { Reminders.toggle(this, r) }
         }
+    }
 
-        title("Sauvegarde")
-        item("Exporter la configuration (fichier dans Téléchargements)") {
+    private fun backupHelp() {
+        link("Exporter la configuration", "Fichier dans Téléchargements (contient vos identifiants)") {
             try {
                 val where = Backup.export(this)
                 AlertDialog.Builder(this).setTitle("Sauvegarde enregistrée")
-                    .setMessage("Fichier : $where\n\nPour restaurer : Outils > Dépôts, puis saisir le chemin complet du fichier " +
+                    .setMessage("Fichier : $where\n\nPour restaurer : Sources > Dépôts, puis saisir le chemin complet du fichier " +
                         "(ex. /storage/emulated/0/Download/omni-iptv-sauvegarde.json) ou son adresse en ligne.\n" +
                         "Le fichier contient vos identifiants : ne le publiez pas.")
                     .setPositiveButton("OK", null).show()
@@ -160,17 +283,7 @@ class SettingsActivity : FragmentActivity() {
                 Ui.toast(this, "Échec : ${e.message}")
             }
         }
-        title("Aide")
-        main("Raccourcis de la télécommande et mode d'emploi", MainFragment.A_ABOUT)
-        box.addView(TextView(this).apply {
-            text = "Omni IPTV ${try { packageManager.getPackageInfo(packageName, 0).versionName } catch (e: Exception) { "" }}"
-            setTextColor(0x66FFFFFF.toInt()); setPadding(0, Ui.dp(this@SettingsActivity, 16), 0, 0)
-        })
-        title("Réinitialisation")
-        item("Réinitialiser les personnalisations de la source affichée") {
-            Repo.activeSourceId?.let { Edits.reset(it) }
-            Ui.toast(this, "Personnalisations réinitialisées")
-        }
+        link("Raccourcis de la télécommande et mode d'emploi") { main(MainFragment.A_ABOUT) }
     }
 
     /** Liste des entrées du téléviseur : HDMI affiché dans l'application, tuner via l'application TV. */
@@ -282,5 +395,9 @@ class SettingsActivity : FragmentActivity() {
             Unit
         }
         if (Prefs.pin.isBlank()) go() else Ui.askPin(this) { go() }
+    }
+
+    companion object {
+        private const val HINT = 0x99FFFFFF.toInt()
     }
 }

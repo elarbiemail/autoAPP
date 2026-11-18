@@ -43,6 +43,13 @@ class MainActivity : FragmentActivity() {
             finish()
             return
         }
+        // Téléviseur : nouvelle interface (barre latérale, onglets de sources, listes).
+        if (intent?.getIntExtra("action", 0) == 0) {
+            startActivity(Intent(this, TvHomeActivity::class.java).setData(intent?.data)
+                .putExtra("section", intent?.getStringExtra("section")))
+            finish()
+            return
+        }
         setContentView(R.layout.activity_frame)
         if (savedInstanceState == null) {
             supportFragmentManager.beginTransaction().replace(R.id.frame, MainFragment()).commit()

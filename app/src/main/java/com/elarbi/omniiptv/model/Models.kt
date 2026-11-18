@@ -71,7 +71,14 @@ data class Channel(
 }
 
 /** Entrée « série » (épisodes chargés à l'ouverture) : Xtream ou portail Stalker. */
-val Channel.isSeries: Boolean get() = url.startsWith("xtseries:") || url.startsWith("stkseries:")
+val Channel.isSeries: Boolean
+    get() = url.startsWith("xtseries:") || url.startsWith("stkseries:") || url.startsWith("grpseries:")
+
+/** Épisode rangé dans la liste de la source (affiché dans sa fiche série, pas dans Films). */
+val Channel.isEpisode: Boolean get() = key.contains("|E") || group.startsWith("Épisodes · ")
+
+/** Film : contenu à la demande qui n'est ni une série ni un épisode. */
+val Channel.isMovie: Boolean get() = isVod && !isSeries && !isEpisode
 
 data class Programme(val start: Long, val end: Long, val title: String, val desc: String)
 

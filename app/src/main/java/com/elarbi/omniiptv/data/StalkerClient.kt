@@ -3,6 +3,7 @@ package com.elarbi.omniiptv.data
 import com.elarbi.omniiptv.model.Channel
 import com.elarbi.omniiptv.model.Programme
 import com.elarbi.omniiptv.model.Source
+import com.elarbi.omniiptv.model.isSeries
 import com.google.gson.stream.JsonReader
 import com.google.gson.stream.JsonToken
 import org.json.JSONArray
@@ -463,7 +464,8 @@ class StalkerClient(private val s: Source) {
             val first = try { call("type=vod&action=get_ordered_list&category=$cid&sortby=added&p=1") as? JSONObject } catch (e: Exception) { null }
             val total = first?.str("total_items")?.toIntOrNull() ?: -1
             if (total >= 0) vodCounts[cid] = total
-            val kept = (previousByGroup["Films · $title"].orEmpty() + previousByGroup["Séries · $title"].orEmpty())
+            val kept = previousByGroup["Films · $title"].orEmpty() + previousByGroup["Séries · $title"].orEmpty()
+                .filter { !it.key.contains("|SR") } + previousByGroup["Épisodes · $title"].orEmpty()
             if (total > 0 && savedCounts[cid] == total && kept.isNotEmpty()) {
                 out += kept
                 reused++
@@ -480,7 +482,7 @@ class StalkerClient(private val s: Source) {
             for (o in items) {
                 val id = o.str("id")
                 val img = imageUrl(o.str("screenshot_uri").ifBlank { o.str("logo") })
-                if (o.str("is_series") == "1") {
+                if (isSeriesItem(o)) {
                     // Ancien format : liste de numéros d'épisodes et commande unique.
                     val nums = o.optJSONArray("series")?.let { a -> (0 until a.length()).joinToString(",") { a.optString(it) } }.orEmpty()
                     val extra = if (nums.isNotBlank()) "|$nums|${o.str("cmd")}" else ""
@@ -499,35 +501,126 @@ class StalkerClient(private val s: Source) {
             onBatch?.invoke(ArrayList(out))
         }
         if (reused > 0) Loading.step("Films et séries : $reused catégorie(s) inchangée(s) reprises de la liste enregistrée")
+        seriesModule(out, previous, savedCounts, onBatch)
         return out
     }
 
-    /** Épisodes d'une série (saisons → épisodes, ou ancien format numéroté). */
-    fun episodes(seriesUrl: String, seriesName: String): List<Channel> {
-        val spec = seriesUrl.removePrefix("stkseries:")
-        val id = spec.substringBefore('|')
-        val out = ArrayList<Channel>()
-        val seasons = (call("type=vod&action=get_ordered_list&movie_id=$id&season_id=0&episode_id=0") as? JSONObject)
-            ?.optJSONArray("data")
-        val seasonObjs = (0 until (seasons?.length() ?: 0)).mapNotNull { seasons?.optJSONObject(it) }
-            .filter { it.str("is_season") == "1" || it.str("is_season") == "true" }
-        for ((n, season) in seasonObjs.withIndex()) {
-            val sid = season.str("id")
-            val sNum = season.str("season_number").ifBlank { (n + 1).toString() }
-            val eps = (call("type=vod&action=get_ordered_list&movie_id=$id&season_id=$sid&episode_id=0") as? JSONObject)
-                ?.optJSONArray("data") ?: continue
-            for (i in 0 until eps.length()) {
-                val e = eps.optJSONObject(i) ?: continue
+    /** Série dans le module « vod » : drapeau is_series (texte, nombre ou booléen) ou liste d'épisodes non vide. */
+    private fun isSeriesItem(o: JSONObject): Boolean {
+        val f = o.opt("is_series")
+        if (f == true || f == 1 || f?.toString() == "1" || f?.toString().equals("true", true)) return true
+        val eps = o.optJSONArray("series")
+        return eps != null && eps.length() > 0
+    }
+
+    /**
+     * Module « series » des portails récents (Ministra 5, panneaux Xtream-UI) : les séries y sont rangées à part
+     * des films (type=series&action=get_categories / get_ordered_list), comme le font QiTV et mac2list.
+     */
+    private fun seriesModule(
+        out: ArrayList<Channel>, previous: List<Channel>, savedCounts: Map<String, Int>,
+        onBatch: ((List<Channel>) -> Unit)?
+    ) {
+        val cats = try {
+            categories("series", "get_categories").filter { it.first != "*" && it.first.isNotBlank() }
+        } catch (e: Exception) { return }
+        if (cats.isEmpty()) return
+        val known = out.filter { it.isSeries }.map { EpgNorm.norm(it.name) }.toHashSet()
+        val previousByGroup = previous.filter { it.key.contains("|SR") }.groupBy { it.group }
+        var budget = MAX_VOD_PAGES
+        val base = Loading.items
+        for ((ci, cat) in cats.withIndex()) {
+            val (cid, title) = cat
+            if (budget <= 0) break
+            Loading.step("Séries : « $title » (${ci + 1}/${cats.size})", ci + 1, cats.size)
+            val first = try { call("type=series&action=get_ordered_list&category=$cid&sortby=added&p=1") as? JSONObject } catch (e: Exception) { null }
+            val total = first?.str("total_items")?.toIntOrNull() ?: -1
+            if (total >= 0) vodCounts["s:$cid"] = total
+            val kept = previousByGroup["Séries · $title"].orEmpty()
+            if (total > 0 && savedCounts["s:$cid"] == total && kept.isNotEmpty()) {
+                out += kept
+                onBatch?.invoke(ArrayList(out))
+                continue
+            }
+            if (total == 0) continue
+            val (items, used) = paged("type=series&action=get_ordered_list&category=$cid&sortby=added", minOf(budget, 20)) { p, pages, n ->
+                Loading.step("Séries : « $title » (${ci + 1}/${cats.size}) — page $p/$pages", ci + 1, cats.size)
+                Loading.items(base + out.size + n)
+            }
+            budget -= used
+            for (o in items) {
+                val id = o.str("id")
+                val name = o.str("name").ifBlank { o.str("title") }
+                if (id.isBlank() || !known.add(EpgNorm.norm(name))) continue
                 out += Channel(
-                    key = "${s.id}|E${sid}_${e.str("id")}", sourceId = s.id,
-                    name = "S$sNum E${e.str("series_number").ifBlank { (i + 1).toString() }} · ${e.str("name")}",
-                    url = "stkvod::" + e.str("cmd"), logo = imageUrl(e.str("screenshot_uri")),
-                    group = seriesName, userAgent = userAgent, isVod = true
+                    key = "${s.id}|SR$id", sourceId = s.id, name = name, url = "stkseries:@$id",
+                    logo = imageUrl(o.str("screenshot_uri").ifBlank { o.str("cover").ifBlank { o.str("logo") } }),
+                    group = "Séries · $title", userAgent = userAgent, isVod = true
                 )
             }
+            onBatch?.invoke(ArrayList(out))
+        }
+    }
+
+    /**
+     * Épisodes d'une série. Trois formes rencontrées sur les portails :
+     *  - saisons (season_id=0) puis épisodes de chaque saison, chacun avec sa commande (QiTV) ;
+     *  - saisons portant la liste des numéros d'épisodes et une commande de saison : lecture par
+     *    create_link&cmd=<saison>&series=<n° d'épisode> (mac2list, Ministra) ;
+     *  - ancien format : numéros d'épisodes et commande directement sur la série.
+     * « stkseries:@id » = série du module « series », « stkseries:id » = série du module « vod ».
+     */
+    fun episodes(seriesUrl: String, seriesName: String): List<Channel> {
+        val spec = seriesUrl.removePrefix("stkseries:")
+        val seriesModule = spec.startsWith("@")
+        val id = spec.removePrefix("@").substringBefore('|')
+        val modules = if (seriesModule) listOf("series", "vod") else listOf("vod", "series")
+        val out = ArrayList<Channel>()
+        for (module in modules) {
+            val seasons = try {
+                (call("type=$module&action=get_ordered_list&movie_id=$id&season_id=0&episode_id=0") as? JSONObject)?.optJSONArray("data")
+            } catch (e: Exception) { null }
+            val all = (0 until (seasons?.length() ?: 0)).mapNotNull { seasons?.optJSONObject(it) }
+            val marked = all.filter { it.str("is_season") == "1" || it.str("is_season").equals("true", true) }
+            val seasonObjs = marked.ifEmpty { all }
+            for ((n, season) in seasonObjs.withIndex()) {
+                val sid = season.str("id")
+                val sNum = season.str("season_number").ifBlank {
+                    Regex("(\\d+)").find(season.str("name"))?.value ?: (n + 1).toString()
+                }
+                val nums = season.optJSONArray("series")
+                val seasonCmd = season.str("cmd")
+                if (nums != null && nums.length() > 0 && seasonCmd.isNotBlank()) {
+                    for (i in 0 until nums.length()) {
+                        val num = nums.optString(i)
+                        out += Channel(
+                            key = "${s.id}|E${id}_${sid}_$num", sourceId = s.id, name = "S$sNum E$num",
+                            url = "stkvod:$num:$seasonCmd", logo = imageUrl(season.str("screenshot_uri")),
+                            group = seriesName, userAgent = userAgent, isVod = true
+                        )
+                    }
+                    continue
+                }
+                val eps = try {
+                    (call("type=$module&action=get_ordered_list&movie_id=$id&season_id=$sid&episode_id=0") as? JSONObject)?.optJSONArray("data")
+                } catch (e: Exception) { null } ?: continue
+                for (i in 0 until eps.length()) {
+                    val e = eps.optJSONObject(i) ?: continue
+                    val cmd = e.str("cmd")
+                    if (cmd.isBlank()) continue
+                    val en = e.str("series_number").ifBlank { (i + 1).toString() }
+                    out += Channel(
+                        key = "${s.id}|E${id}_${sid}_${e.str("id")}", sourceId = s.id,
+                        name = "S$sNum E$en" + e.str("name").let { if (it.isNotBlank() && it != en) " · $it" else "" },
+                        url = "stkvod::$cmd", logo = imageUrl(e.str("screenshot_uri")),
+                        group = seriesName, userAgent = userAgent, isVod = true
+                    )
+                }
+            }
+            if (out.isNotEmpty()) break
         }
         if (out.isEmpty() && spec.contains('|')) {
-            val parts = spec.split('|', limit = 3)
+            val parts = spec.removePrefix("@").split('|', limit = 3)
             val nums = parts.getOrNull(1).orEmpty().split(',').filter { it.isNotBlank() }
             val cmd = parts.getOrNull(2).orEmpty()
             nums.forEach { num ->
@@ -537,6 +630,7 @@ class StalkerClient(private val s: Source) {
                 )
             }
         }
+        if (out.isEmpty()) throw IOException("Le portail n'a renvoyé aucun épisode pour « $seriesName ».")
         return out
     }
 

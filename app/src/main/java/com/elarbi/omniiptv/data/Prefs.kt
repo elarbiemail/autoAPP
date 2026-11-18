@@ -22,10 +22,44 @@ object Prefs {
         get() = p.getBoolean("refreshOnStart", false)
         set(v) = p.edit().putBoolean("refreshOnStart", v).apply()
 
-    /** Tampon : low, normal, high. */
+    /** Tampon : auto (selon la mémoire de l'appareil), low, normal, high, max. */
     var buffer: String
-        get() = p.getString("buffer", "normal") ?: "normal"
+        get() = p.getString("buffer", "auto") ?: "auto"
         set(v) = p.edit().putString("buffer", v).apply()
+
+    /** Décodage : auto (matériel + secours logiciel), hw (matériel seulement), sw (son décodé par FFmpeg en priorité). */
+    var decoder: String
+        get() = p.getString("decoder", "auto") ?: "auto"
+        set(v) = p.edit().putString("decoder", v).apply()
+
+    /** Résolution maximale (hauteur en pixels), 0 = sans limite. */
+    var maxHeight: Int
+        get() = p.getInt("maxHeight", 0)
+        set(v) = p.edit().putInt("maxHeight", v).apply()
+
+    /** Aperçu vidéo de la chaîne sélectionnée dans l'onglet Direct. */
+    var livePreview: Boolean
+        get() = p.getBoolean("livePreview", true)
+        set(v) = p.edit().putBoolean("livePreview", v).apply()
+
+    /** Langue audio préférée (code ISO, vide = langue du téléviseur). */
+    var audioLang: String
+        get() = p.getString("audioLang", "") ?: ""
+        set(v) = p.edit().putString("audioLang", v).apply()
+
+    /** Sources exclues de « Toutes les sources » dans les onglets. */
+    var hiddenSources: Set<String>
+        get() = p.getStringSet("hiddenSources", emptySet())?.toSet() ?: emptySet()
+        set(v) = p.edit().putStringSet("hiddenSources", v).apply()
+
+    /** Source choisie dans chaque onglet (live, movies, series) ; vide = toutes. */
+    fun tabSource(tab: String): String = p.getString("tabsrc_$tab", "") ?: ""
+    fun setTabSource(tab: String, id: String) = p.edit().putString("tabsrc_$tab", id).apply()
+
+    /** Dernière liste de favoris ouverte. */
+    var favList: String
+        get() = p.getString("favList", "fav") ?: "fav"
+        set(v) = p.edit().putString("favList", v).apply()
 
     /** Mode tunnel (lecture vidéo confiée au téléviseur). */
     var tunneling: Boolean

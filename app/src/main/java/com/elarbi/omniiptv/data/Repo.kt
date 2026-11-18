@@ -211,7 +211,7 @@ object Repo {
     private suspend fun refreshInner(s: Source, withEpg: Boolean): Int = withContext(Dispatchers.IO) {
         var autoEpg = ""
         val old = channels(s.id)   // liste enregistrée, pour la comparaison
-        val list: List<Channel> = when (s.type) {
+        val raw: List<Channel> = when (s.type) {
             SourceType.M3U -> {
                 val r = Http.openTracked(s.url, "Téléchargement et lecture de la liste", uaHeaders(s)).use { input ->
                     input.bufferedReader(Charsets.UTF_8).useLines { lines -> M3uParser.parseLines(lines, s.id) }
@@ -242,7 +242,9 @@ object Repo {
             SourceType.YOUTUBE -> return@withContext channels(s.id).size
             SourceType.TUNER -> TunerSource.channels(app)
         }
-        if (list.isEmpty()) throw IOException("Aucune chaîne trouvée")
+        if (raw.isEmpty()) throw IOException("Aucune chaîne trouvée")
+        // Films et séries mélangés (M3U, catégories VOD) : les épisodes sont regroupés en fiches séries.
+        val list = if (s.type == SourceType.YOUTUBE || s.type == SourceType.TUNER) raw else SeriesGrouper.apply(s.id, raw)
         Loading.items(list.size)
         // Comparaison avec la liste enregistrée : nouveautés, retraits, modifications.
         val summary = compare(old, list)
@@ -422,6 +424,15 @@ object Repo {
         return added
     }
 
+    /** Remplace la liste « Favoris » (nouvel ordre ou nouveaux éléments). */
+    @Synchronized
+    fun setFavorites(list: List<Channel>) {
+        favorites.clear()
+        list.forEach { favorites[it.key] = it }
+        saveChannels("favorites.json", favorites.values)
+        bump()
+    }
+
     @Synchronized
     fun addRecent(ch: Channel) {
         recents.removeAll { it.key == ch.key }
@@ -461,6 +472,7 @@ object Repo {
             playContext = playContext.map { c -> if (c.sourceId == sourceId) byKey[c.key] ?: c else c }
         }
         Library.sync(sourceId, byKey)
+        FavLists.sync(sourceId, byKey)
     }
 
     fun findChannel(key: String): Channel? {

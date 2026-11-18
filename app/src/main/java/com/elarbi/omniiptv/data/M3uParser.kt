@@ -4,6 +4,9 @@ import com.elarbi.omniiptv.model.Channel
 import java.net.URLDecoder
 
 object M3uParser {
+    /** Fichiers vidéo (films et épisodes) par opposition aux flux en direct. */
+    private val vodExt = Regex("\\.(mp4|mkv|avi|mov|m4v|wmv|flv|webm)(\\?|$)", RegexOption.IGNORE_CASE)
+
     class Result(val channels: List<Channel>, val epgUrl: String)
 
     private val attrRe = Regex("([A-Za-z0-9_-]+)=\"([^\"]*)\"")
@@ -74,7 +77,8 @@ object M3uParser {
                     logo = a["tvg-logo"].orEmpty(), group = group, epgId = a["tvg-id"].orEmpty(),
                     userAgent = ua.ifBlank { a["user-agent"].orEmpty() },
                     referer = ref.ifBlank { a["referrer"].orEmpty() },
-                    isVod = url.contains("/movie/") || url.contains("/series/")
+                    isVod = url.contains("/movie/") || url.contains("/series/") || vodExt.containsMatchIn(url) ||
+                        a["tvg-type"].orEmpty().lowercase().let { it == "movie" || it == "series" || it == "vod" }
                 )
             )
             a = emptyMap(); name = ""; ua = ""; ref = ""; grp = ""

@@ -20,18 +20,76 @@ import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory
  */
 @androidx.annotation.OptIn(markerClass = [UnstableApi::class])
 object PlayerFactory {
+    /** Réglage du tampon : durées (ms) min, max, avant lecture, après coupure, retour arrière, retard sur le direct. */
+    data class Buffer(val label: String, val min: Int, val max: Int, val start: Int, val rebuffer: Int, val back: Int, val liveOffset: Long)
+
+    val presets = linkedMapOf(
+        "low" to Buffer("Zapping rapide", 3_000, 15_000, 500, 1_500, 0, 4_000),
+        "normal" to Buffer("Équilibré", 10_000, 40_000, 1_000, 2_500, 10_000, 8_000),
+        "high" to Buffer("Connexion instable", 25_000, 90_000, 2_000, 5_000, 20_000, 12_000),
+        "max" to Buffer("Connexion très instable", 50_000, 180_000, 3_000, 8_000, 30_000, 20_000)
+    )
+
+    /** Mémoire accordée à l'application (Mo) et appareil modeste ou non. */
+    private fun memory(ctx: Context): Pair<Int, Boolean> {
+        val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        return am.largeMemoryClass to (am.isLowRamDevice || am.memoryClass < 128)
+    }
+
+    /** Préréglage effectif (« auto » choisit selon l'appareil). */
+    fun buffer(ctx: Context): Buffer {
+        val key = com.elarbi.omniiptv.data.Prefs.buffer
+        if (key != "auto") return presets[key] ?: presets.getValue("normal")
+        return if (memory(ctx).second) presets.getValue("low").copy(label = "Auto (appareil modeste)", min = 6_000, max = 20_000)
+        else presets.getValue("normal").copy(label = "Auto")
+    }
+
+    /**
+     * Plafond du tampon en octets : le tampon est en mémoire vive, on n'en prend qu'une part raisonnable
+     * pour éviter les « manques de mémoire » sur les boîtiers TV modestes (16 à 96 Mo).
+     */
+    fun bufferBytes(ctx: Context): Int {
+        val (mb, low) = memory(ctx)
+        val part = if (low) mb / 8 else mb / 4
+        return (part.coerceIn(16, 96) * 1024 * 1024)
+    }
+
+    /** Résumé lisible du réglage (affiché dans Réglages > Lecture). */
+    fun describe(ctx: Context): String {
+        val b = buffer(ctx)
+        val dec = when (com.elarbi.omniiptv.data.Prefs.decoder) { "hw" -> "matériel seul"; "sw" -> "logiciel FFmpeg prioritaire"; else -> "matériel + secours logiciel" }
+        return "${b.label} : démarrage après ${b.start / 1000.0} s, tampon ${b.min / 1000}–${b.max / 1000} s, " +
+            "plafond ${bufferBytes(ctx) / 1048576} Mo, ${b.liveOffset / 1000} s derrière le direct • décodage $dec"
+    }
+
     fun create(ctx: Context): ExoPlayer {
+        val prefs = com.elarbi.omniiptv.data.Prefs
+        // Décodage : matériel d'abord, avec secours sur un autre décodeur ; FFmpeg pour les sons que le téléviseur
+        // ne sait pas lire (AC3, E-AC3, DTS, MP2… fréquents en IPTV).
         val renderers = DefaultRenderersFactory(ctx)
-            .setEnableDecoderFallback(true)
-            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
-        val load = when (com.elarbi.omniiptv.data.Prefs.buffer) {
-            "low" -> DefaultLoadControl.Builder().setBufferDurationsMs(4_000, 20_000, 700, 1_500).build()
-            "high" -> DefaultLoadControl.Builder().setBufferDurationsMs(30_000, 120_000, 2_500, 6_000).build()
-            else -> DefaultLoadControl.Builder().setBufferDurationsMs(12_000, 50_000, 1_200, 3_000).build()
-        }
+            .setEnableDecoderFallback(prefs.decoder != "hw")
+            .setExtensionRendererMode(
+                when (prefs.decoder) {
+                    "hw" -> DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF
+                    "sw" -> DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER
+                    else -> DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON
+                }
+            )
+        val b = buffer(ctx)
+        val load = DefaultLoadControl.Builder()
+            .setAllocator(androidx.media3.exoplayer.upstream.DefaultAllocator(true, androidx.media3.common.C.DEFAULT_BUFFER_SEGMENT_SIZE))
+            .setBufferDurationsMs(b.min, b.max, b.start, b.rebuffer)
+            .setTargetBufferBytes(bufferBytes(ctx))
+            .setPrioritizeTimeOverSizeThresholds(false)
+            .setBackBuffer(b.back, true)
+            .build()
         val selector = androidx.media3.exoplayer.trackselection.DefaultTrackSelector(ctx)
-        // Mode tunnel : décodage vidéo directement par le téléviseur (plus fluide sur certains modèles).
-        selector.setParameters(selector.buildUponParameters().setTunnelingEnabled(com.elarbi.omniiptv.data.Prefs.tunneling))
+        val params = selector.buildUponParameters()
+            // Mode tunnel : décodage vidéo directement par le téléviseur (plus fluide sur certains modèles).
+            .setTunnelingEnabled(prefs.tunneling)
+            .setPreferredAudioLanguage(prefs.audioLang.ifBlank { java.util.Locale.getDefault().language })
+        if (prefs.maxHeight > 0) params.setMaxVideoSize(prefs.maxHeight * 16 / 9 + 16, prefs.maxHeight)
+        selector.setParameters(params)
         return ExoPlayer.Builder(ctx, renderers).setLoadControl(load).setTrackSelector(selector).build()
     }
 
@@ -64,9 +122,12 @@ object PlayerFactory {
         val dataSource: androidx.media3.datasource.DataSource.Factory =
             if (portal && mime == MimeTypes.APPLICATION_M3U8) StickyRedirectDataSource.Factory(base) else base
         val builder = MediaItem.Builder().setUri(url)
-            .setLiveConfiguration(MediaItem.LiveConfiguration.Builder().setTargetOffsetMs(8_000).build())
+            .setLiveConfiguration(MediaItem.LiveConfiguration.Builder().setTargetOffsetMs(buffer(ctx).liveOffset).build())
         if (mime != null) builder.setMimeType(mime)
-        val source = DefaultMediaSourceFactory(dataSource, extractors).createMediaSource(builder.build())
+        // Nouvel essai automatique sur les erreurs passagères (segment manquant, serveur saturé).
+        val source = DefaultMediaSourceFactory(dataSource, extractors)
+            .setLoadErrorHandlingPolicy(androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy(6))
+            .createMediaSource(builder.build())
         player.setMediaSource(source)
         player.prepare()
         player.playWhenReady = true

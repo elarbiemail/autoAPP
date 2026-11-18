@@ -66,6 +66,10 @@
         <activity android:name=".ui.SeriesActivity" />
         <activity android:name=".ui.BrowseActivity" />
         <activity
+            android:name=".ui.TvHomeActivity"
+            android:configChanges="keyboard|keyboardHidden|navigation"
+            android:windowSoftInputMode="adjustPan|stateHidden" />
+        <activity
             android:name=".ui.MobileActivity"
             android:exported="true"
             android:launchMode="singleTop"
