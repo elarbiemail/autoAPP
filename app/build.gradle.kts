@@ -44,7 +44,7 @@ android {
 }
 
 dependencies {
-    val media3 = "1.4.1"
+    val media3 = "1.3.1"
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.fragment:fragment-ktx:1.8.2")
     implementation("androidx.leanback:leanback:1.0.0")
@@ -60,7 +60,7 @@ dependencies {
     implementation("androidx.media3:media3-datasource-rtmp:$media3")
     implementation("androidx.media3:media3-ui:$media3")
     // Décodeur audio FFmpeg (AC3, E-AC3, DTS, MP2, TrueHD…) pour les chaînes dont le son n'est pas lu par le téléviseur.
-    implementation("org.jellyfin.media3:media3-ffmpeg-decoder:$media3+1")
+    implementation("org.jellyfin.media3:media3-ffmpeg-decoder:$media3+2")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.google.code.gson:gson:2.11.0")
