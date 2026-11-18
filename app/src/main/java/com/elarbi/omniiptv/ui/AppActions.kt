@@ -32,6 +32,7 @@ object AppActions {
             MainFragment.A_REFRESH -> refresh(a)
             MainFragment.A_TUNER -> tuner?.invoke() ?: loadTuner(a)
             MainFragment.A_HOME -> {
+                HomeScreen.setEnabled(a, true)
                 HomeSyncWorker.runNow(a, epg = true)
                 AlertDialog.Builder(a).setTitle("Rangée Omni IPTV sur l'écran d'accueil")
                     .setMessage(

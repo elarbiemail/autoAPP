@@ -131,8 +131,36 @@ object HomeScreen {
         return b.build()
     }
 
+    /** Rangées de l'accueil désactivées par l'utilisateur (« Tout retirer ») : plus rien n'est publié. */
+    fun disabled(ctx: Context) = prefs(ctx).getBoolean("allRemoved", false)
+
+    fun setEnabled(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("allRemoved", !on).apply()
+
+    /**
+     * Retire tout ce que l'application a placé sur le téléviseur : rangées de l'accueil, « Continuer à regarder »,
+     * chaînes de l'onglet Direct et raccourcis. À faire avant de désinstaller, pour les téléviseurs dont
+     * l'accueil garde ces éléments en mémoire après la désinstallation.
+     */
+    fun removeAll(ctx: Context): Int {
+        val cr = ctx.contentResolver
+        var n = 0
+        try { n += cr.delete(TvContractCompat.PreviewPrograms.CONTENT_URI, null, null) } catch (_: Exception) {}
+        try { n += cr.delete(TvContractCompat.WatchNextPrograms.CONTENT_URI, null, null) } catch (_: Exception) {}
+        try { n += cr.delete(TvContractCompat.Channels.CONTENT_URI, null, null) } catch (_: Exception) {}
+        // Au cas où le téléviseur refuse la suppression globale : rangée par rangée.
+        val pr = prefs(ctx)
+        for ((k, v) in pr.all) {
+            if (v is Long && v > 0) try { n += cr.delete(TvContractCompat.buildChannelUri(v), null, null) } catch (_: Exception) {}
+        }
+        pr.edit().clear().putBoolean("allRemoved", true).putBoolean("tif", false).apply()
+        try { Posters.cleanup(ctx) } catch (_: Exception) {}
+        Shortcuts.removeAll(ctx)
+        return n
+    }
+
     /** Met à jour toutes les rangées configurées (Réglages > Écran d'accueil du TV). */
     fun sync(ctx: Context) {
+        if (disabled(ctx)) return
         val cr = ctx.contentResolver
         try { Posters.cleanup(ctx) } catch (_: Exception) {}
         HomeRows.rows(ctx).forEachIndexed { n, row ->
@@ -151,6 +179,7 @@ object HomeScreen {
     /** Ajoute la chaîne (ou le film / l'épisode avec sa progression) à « Continuer à regarder ». */
     fun addWatchNext(ctx: Context, ch: Channel, pos: Long = 0L, dur: Long = 0L) {
         if (ch.isVod && dur <= 0L) return
+        if (disabled(ctx)) return
         try {
             removeWatchNext(ctx, ch.key)
             val b = WatchNextProgram.Builder()

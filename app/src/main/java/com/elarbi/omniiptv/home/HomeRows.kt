@@ -73,12 +73,16 @@ object HomeRows {
     }
 
     fun add(ctx: Context, kind: String, arg: String, name: String): Row {
+        HomeScreen.setEnabled(ctx, true)
         val r = Row("row" + System.currentTimeMillis().toString(36), kind, arg, name.take(40))
         save(ctx, rows(ctx) + r)
         return r
     }
 
-    fun update(ctx: Context, r: Row) = save(ctx, rows(ctx).map { if (it.id == r.id) r else it })
+    fun update(ctx: Context, r: Row) {
+        if (r.enabled) HomeScreen.setEnabled(ctx, true)
+        save(ctx, rows(ctx).map { if (it.id == r.id) r else it })
+    }
 
     fun move(ctx: Context, id: String, delta: Int) {
         val l = rows(ctx).toMutableList()

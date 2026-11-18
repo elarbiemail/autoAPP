@@ -62,6 +62,8 @@ object TunerSource {
                 val id = c.getLong(0)
                 val input = c.getString(1) ?: continue
                 if (input == own) continue
+                // Rangées d'applications sur l'accueil (Netflix, YouTube, Omni IPTV…) : ce ne sont pas des chaînes TV.
+                if (c.getString(4) == TvContract.Channels.TYPE_PREVIEW) continue
                 val num = c.getString(2).orEmpty()
                 val name = c.getString(3).orEmpty().ifBlank { "Chaîne $num" }
                 val type = c.getString(4)

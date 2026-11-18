@@ -45,6 +45,7 @@ object Shortcuts {
 
     /** Met à jour les raccourcis dynamiques (à appeler hors du fil principal). */
     fun update(ctx: Context) {
+        if (HomeScreen.disabled(ctx)) return
         val sm = ctx.getSystemService(ShortcutManager::class.java) ?: return
         try {
             val list = ArrayList<ShortcutInfo>()
@@ -61,6 +62,16 @@ object Shortcuts {
     }
 
     /** Épingle un raccourci (logo ou affiche) sur l'écran d'accueil. Renvoie false si non pris en charge. */
+    /** Retire tous les raccourcis de l'application (dynamiques et épinglés). */
+    fun removeAll(ctx: Context) {
+        val sm = ctx.getSystemService(ShortcutManager::class.java) ?: return
+        try { sm.removeAllDynamicShortcuts() } catch (_: Exception) {}
+        try {
+            val pinned = sm.pinnedShortcuts.map { it.id }
+            if (pinned.isNotEmpty()) sm.disableShortcuts(pinned, "Raccourci retiré")
+        } catch (_: Exception) {}
+    }
+
     fun pin(ctx: Context, ch: Channel): Boolean {
         val sm = ctx.getSystemService(ShortcutManager::class.java) ?: return false
         if (!sm.isRequestPinShortcutSupported) return false

@@ -259,6 +259,31 @@ class SettingsActivity : FragmentActivity() {
         }
         link("Mettre à jour l'accueil maintenant") { syncHome() }
         link("Publier les chaînes dans l'onglet Direct", "Chaînes et programmes dans l'onglet Direct de Google TV") { main(MainFragment.A_LIVE_TAB) }
+        if (com.elarbi.omniiptv.home.HomeScreen.disabled(this)) {
+            link("Réactiver les rangées de l'accueil", "Elles ont été retirées avec « Tout retirer »") {
+                com.elarbi.omniiptv.home.HomeScreen.setEnabled(this, true); syncHome()
+            }
+        }
+        link("🧹 Tout retirer du téléviseur (avant désinstallation)",
+            "Rangées de l'accueil, « Continuer à regarder », onglet Direct et raccourcis d'Omni IPTV") { removeAllFromTv() }
+    }
+
+    private fun removeAllFromTv() {
+        AlertDialog.Builder(this).setTitle("Tout retirer du téléviseur ?")
+            .setMessage("Les rangées d'Omni IPTV sur l'accueil, « Continuer à regarder », les chaînes de l'onglet Direct et les raccourcis " +
+                "seront supprimés. Faites-le avant de désinstaller l'application : certains téléviseurs les gardent sinon en mémoire.\n\n" +
+                "Vos sources, listes et favoris dans l'application ne sont pas touchés.")
+            .setPositiveButton("Tout retirer") { _, _ ->
+                lifecycleScope.launch {
+                    val n = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        com.elarbi.omniiptv.home.HomeScreen.removeAll(this@SettingsActivity)
+                    }
+                    Ui.toast(this@SettingsActivity, "$n élément(s) retiré(s) du téléviseur. Si l'accueil en affiche encore, " +
+                        "redémarrez le téléviseur.")
+                    render()
+                }
+            }
+            .setNegativeButton("Annuler", null).show()
     }
 
     /** Met à jour l'accueil ; si demandé, propose d'y afficher la rangée (le téléviseur demande confirmation). */
@@ -389,6 +414,7 @@ class SettingsActivity : FragmentActivity() {
             }
         }
         link("Raccourcis de la télécommande et mode d'emploi") { main(MainFragment.A_ABOUT) }
+        link("🧹 Avant de désinstaller : tout retirer du téléviseur", "Rangées de l'accueil, onglet Direct, raccourcis") { removeAllFromTv() }
         val journal = com.elarbi.omniiptv.data.CrashLog.journal()
         link("Journal des erreurs", if (journal.isBlank()) "Aucune erreur enregistrée" else "${journal.lines().count { it.startsWith("===") }} erreur(s) enregistrée(s) — à photographier pour la correction") {
             val tv = TextView(this).apply {

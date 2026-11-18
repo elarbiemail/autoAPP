@@ -676,7 +676,7 @@ class TvHomeActivity : FragmentActivity() {
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val catList = listView()
         catList.adapter = ArrayAdapter(this, R.layout.item_text, cats.map { it.label })
-        row.addView(column("Catégories", catList), LinearLayout.LayoutParams(dp(250), ViewGroup.LayoutParams.MATCH_PARENT))
+        row.addView(column("Catégories", catList), LinearLayout.LayoutParams(dp(215), ViewGroup.LayoutParams.MATCH_PARENT))
 
         val middle = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val search = searchField("Rechercher une chaîne…")
@@ -689,7 +689,7 @@ class TvHomeActivity : FragmentActivity() {
             marginStart = dp(12); marginEnd = dp(12)
         })
         val info = infoPanel()
-        row.addView(info.root, LinearLayout.LayoutParams(dp(330), ViewGroup.LayoutParams.MATCH_PARENT))
+        row.addView(info.root, LinearLayout.LayoutParams(dp(285), ViewGroup.LayoutParams.MATCH_PARENT))
         liveList = chList
 
         var cat = cats[0]
@@ -759,6 +759,7 @@ class TvHomeActivity : FragmentActivity() {
             }
             next.text = nx?.let { "Ensuite : ${Ui.hm(it.start)}  ${it.title}" } ?: ""
             if (preview == null || previewKey != ch.key) {
+                previewView?.visibility = View.INVISIBLE
                 logo.visibility = View.VISIBLE
                 if (ch.logo.isNotBlank()) Glide.with(this@TvHomeActivity).load(ch.logo).error(R.drawable.ic_tv).into(logo)
                 else logo.setImageResource(R.drawable.ic_tv)
@@ -782,10 +783,12 @@ class TvHomeActivity : FragmentActivity() {
             setMargins(dp(40), dp(30), dp(40), dp(30))
         })
         if (Prefs.livePreview) {
-            previewView = PlayerView(this).apply { useController = false; setShutterBackgroundColor(Color.TRANSPARENT) }
+            previewView = PlayerView(this).apply {
+                useController = false; setShutterBackgroundColor(Color.TRANSPARENT); visibility = View.INVISIBLE
+            }
             info.frame.addView(previewView, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         } else previewView = null
-        root.addView(info.frame, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(173)))
+        root.addView(info.frame, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(149)))
         root.addView(info.name, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(8) })
         root.addView(info.now)
         root.addView(info.bar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(6)).apply { topMargin = dp(4); bottomMargin = dp(6) })
@@ -817,7 +820,9 @@ class TvHomeActivity : FragmentActivity() {
                 val p = preview ?: PlayerFactory.create(this@TvHomeActivity, preview = true).also { pl ->
                     preview = pl
                     pl.addListener(object : androidx.media3.common.Player.Listener {
+                        override fun onRenderedFirstFrame() { previewView?.visibility = View.VISIBLE }
                         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                            previewView?.visibility = View.INVISIBLE
                             status.text = "Aperçu indisponible (${error.errorCodeName}) — OK pour essayer en plein écran"
                         }
                     })
@@ -834,6 +839,7 @@ class TvHomeActivity : FragmentActivity() {
 
     private fun stopPlayerOnly() {
         previewKey = ""
+        previewView?.visibility = View.INVISIBLE
         preview?.stop()
     }
 
@@ -841,6 +847,7 @@ class TvHomeActivity : FragmentActivity() {
         handler.removeCallbacks(previewRun)
         previewKey = ""
         pendingPreview = null
+        previewView?.visibility = View.INVISIBLE
         previewView?.player = null
         preview?.release()
         preview = null
