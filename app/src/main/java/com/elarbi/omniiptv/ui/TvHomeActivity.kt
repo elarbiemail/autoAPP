@@ -639,8 +639,10 @@ class TvHomeActivity : FragmentActivity() {
         val items: List<Channel>, val onClick: (Channel) -> Unit, val onLong: (Channel) -> Unit
     ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+            // Les paramètres de disposition viennent de la rangée elle-même (gonflage avec le parent) :
+            // on ne change que la largeur, sans les remplacer (la rangée TV exige les siens).
             val v = LayoutInflater.from(parent.context).inflate(R.layout.item_tile, parent, false)
-            v.layoutParams = RecyclerView.LayoutParams(dp(180), ViewGroup.LayoutParams.WRAP_CONTENT)
+            v.layoutParams.width = dp(180)
             v.background = ContextCompat.getDrawable(this@TvHomeActivity, R.drawable.bg_card)
             v.isFocusable = true
             v.setOnFocusChangeListener { x, f -> x.animate().scaleX(if (f) 1.07f else 1f).scaleY(if (f) 1.07f else 1f).setDuration(120).start() }
