@@ -232,7 +232,7 @@ class SettingsActivity : FragmentActivity() {
     private fun playback() {
         note(PlayerFactory.describe(this))
         choice("Mémoire tampon", listOf(
-            "auto" to "Automatique (selon la mémoire de l'appareil) — recommandé",
+            "auto" to "Automatique — recommandé (la mémoire suit la résolution : SD, HD, 4K)",
             "low" to "Zapping rapide : démarre après 0,5 s, tampon 3–15 s",
             "normal" to "Équilibré : démarre après 1 s, tampon 10–40 s",
             "high" to "Connexion instable : démarre après 2 s, tampon 25–90 s",

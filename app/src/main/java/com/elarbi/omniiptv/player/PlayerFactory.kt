@@ -59,8 +59,12 @@ object PlayerFactory {
     fun describe(ctx: Context): String {
         val b = buffer(ctx)
         val dec = when (com.elarbi.omniiptv.data.Prefs.decoder) { "hw" -> "matériel seul"; "sw" -> "logiciel FFmpeg prioritaire"; else -> "matériel + secours logiciel" }
+        val rt = Runtime.getRuntime()
+        val ceil = (rt.maxMemory() * (if (memory(ctx).second) 0.25 else 0.40)).toLong()
+            .coerceIn(16L * 1048576, (if (memory(ctx).second) 64L else 192L) * 1048576) / 1048576
         return "${b.label} : démarrage après ${b.start / 1000.0} s, tampon ${b.min / 1000}–${b.max / 1000} s, " +
-            "plafond ${bufferBytes(ctx) / 1048576} Mo, ${b.liveOffset / 1000} s derrière le direct • décodage $dec"
+            "${b.liveOffset / 1000} s derrière le direct • mémoire adaptative selon la résolution " +
+            "(≈ 15 Mo en SD, 50 Mo en Full HD, 150 Mo en 4K, plafond $ceil Mo sur cet appareil) • décodage $dec"
     }
 
     /** [preview] : lecteur léger pour l'aperçu de Direct (petit tampon, démarrage immédiat). */
@@ -78,13 +82,8 @@ object PlayerFactory {
                 }
             )
         val b = if (preview) Buffer("Aperçu", 2_000, 8_000, 500, 1_000, 0, 6_000) else buffer(ctx)
-        val load = DefaultLoadControl.Builder()
-            .setAllocator(androidx.media3.exoplayer.upstream.DefaultAllocator(true, androidx.media3.common.C.DEFAULT_BUFFER_SEGMENT_SIZE))
-            .setBufferDurationsMs(b.min, b.max, b.start, b.rebuffer)
-            .setTargetBufferBytes(if (preview) 12 * 1024 * 1024 else bufferBytes(ctx))
-            .setPrioritizeTimeOverSizeThresholds(false)
-            .setBackBuffer(b.back, true)
-            .build()
+        // Tampon adaptatif : sa taille suit le débit et la résolution du flux, dans la limite de la mémoire disponible.
+        val load = AdaptiveLoadControl(b, memory(ctx).second, preview)
         val selector = androidx.media3.exoplayer.trackselection.DefaultTrackSelector(ctx)
         val params = selector.buildUponParameters()
             // Mode tunnel : décodage vidéo directement par le téléviseur (plus fluide sur certains modèles).

@@ -700,6 +700,7 @@ class PlayerActivity : FragmentActivity() {
             appendLine("Débit du flux   : ${rate(v?.bitrate?.toLong() ?: 0L)}")
             appendLine("Vidéo           : ${codec(v)} · $fps")
             appendLine("Audio           : $audio")
+            com.elarbi.omniiptv.player.AdaptiveLoadControl.current?.let { appendLine("Mémoire tampon  : ${it.describe()}") }
             appendLine("Tampon          : ${player.totalBufferedDuration / 1000} s")
             appendLine("Images perdues  : $droppedFrames")
             append("Qualité choisie : $qualityLabel")
