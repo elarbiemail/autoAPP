@@ -353,17 +353,23 @@ class StalkerClient(private val s: Source) {
     }
 
     /** Lien de lecture temporaire d'une chaîne (type itv) ou d'un film / épisode (type vod). */
-    fun createLink(cmd: String, type: String = "itv", series: String = ""): String {
+    fun createLink(cmd: String, type: String = "itv", series: String = "", id: String = ""): String {
         val direct = clean(cmd)
         var lastError: Exception? = null
         for (attempt in 0..1) {
             try {
                 if (attempt == 1) synchronized(this) { token = "" }   // second essai avec une session neuve
                 val js = call(
-                    "type=$type&action=create_link&cmd=${enc(cmd)}&series=${enc(series)}" +
+                    "type=$type&action=create_link&cmd=${encCmd(cmd)}&series=${enc(series)}" +
                         "&forced_storage=undefined&disable_ad=0&download=0"
                 ) as? JSONObject
-                val c = clean(js?.str("url")?.ifBlank { null } ?: js?.str("cmd").orEmpty())
+                var c = clean(js?.str("cmd")?.ifBlank { null } ?: js?.str("url").orEmpty())
+                // Bogue connu des portails (Ministra, panneaux Xtream-UI) : lien rendu avec « stream= » vide,
+                // que le serveur coupe aussitôt. On y remet le numéro de la chaîne (comme mac2list / STB-Player).
+                if (type == "itv" && hasEmptyStream(c)) {
+                    val n = streamNumber(cmd, id)
+                    c = if (n.isNotEmpty()) fillStream(c, n) else ""
+                }
                 if (c.isNotBlank() && !isPlaceholder(c)) return c
                 val err = js?.str("error").orEmpty()
                 if (err.isNotBlank()) lastError = IOException("Le portail refuse la lecture : $err")
@@ -371,12 +377,58 @@ class StalkerClient(private val s: Source) {
                 lastError = e
             }
         }
-        if (!isPlaceholder(direct) && direct.startsWith("http")) return direct
+        if (!isPlaceholder(direct) && direct.startsWith("http") && !hasEmptyStream(direct)) return direct
         throw IOException(
             "Le portail n'a pas fourni de lien de lecture pour cette chaîne" +
                 (lastError?.message?.let { " ($it)" } ?: " (chaîne non incluse dans l'abonnement, ou connexion déjà utilisée ailleurs)")
         )
     }
+
+    /**
+     * Lien d'une chaîne en direct selon l'essai n° [attempt], comme le font les clients de référence :
+     *  0 → create_link (lien temporaire, « stream= » réparé) — QiTV, stalkerhek, MacAttack ;
+     *  1 → la commande listée telle quelle si c'est déjà un vrai lien — extension Kodi (use_http_tmp_link = 0), QiTV 2.8.4 ;
+     *  2 → lien construit « /play/live.php?mac=…&stream=N&extension=ts » — QiTV (export).
+     * Si une stratégie n'est pas possible, on passe à la suivante.
+     */
+    fun liveLink(cmd: String, id: String, attempt: Int): Pair<String, String> {
+        val order = listOf(0, 1, 2).let { l -> l.drop(attempt % 3) + l.take(attempt % 3) }
+        var last: Exception? = null
+        for (k in order) {
+            try {
+                when (k) {
+                    0 -> return createLink(cmd, "itv", "", id) to "lien temporaire du portail"
+                    1 -> {
+                        val d = clean(cmd)
+                        if (d.startsWith("http") && !isPlaceholder(d) && !hasEmptyStream(d)) return d to "lien listé par le portail"
+                    }
+                    2 -> {
+                        val n = streamNumber(cmd, id)
+                        if (n.isNotEmpty()) {
+                            login()
+                            return "${hostBase()}/play/live.php?mac=$mac&stream=$n&extension=ts" to "lien direct play/live.php"
+                        }
+                    }
+                }
+            } catch (e: Exception) { last = e }
+        }
+        throw last ?: IOException("Le portail n'a pas fourni de lien de lecture pour cette chaîne")
+    }
+
+    /** « stream= » présent mais vide dans le lien. */
+    private fun hasEmptyStream(u: String) = Regex("[?&]stream=(&|$)").containsMatchIn(u)
+
+    private fun fillStream(u: String, n: String) = u.replace(Regex("([?&]stream=)(?=&|$)"), "$1$n")
+
+    /** Numéro du flux : « /ch/123_ » ou « stream=123 » dans la commande, sinon l'identifiant de la chaîne. */
+    fun streamNumber(cmd: String, id: String): String =
+        Regex("/ch/(\\d+)").find(cmd)?.groupValues?.get(1)
+            ?: Regex("[?&]stream=(\\d+)").find(cmd)?.groupValues?.get(1)
+            ?: id.takeIf { it.isNotEmpty() && it.all(Char::isDigit) }.orEmpty()
+
+    /** La commande est encodée comme le font les boîtiers et les autres clients (espace → %20, « / » et « : » gardés). */
+    private fun encCmd(v: String): String =
+        URLEncoder.encode(v, "UTF-8").replace("+", "%20").replace("%2F", "/").replace("%3A", ":")
 
     /** Commande « fictive » (http://localhost/…) qui ne peut être lue sans create_link. */
     private fun isPlaceholder(u: String) = u.contains("://localhost") || u.isBlank() || !u.contains("://")
@@ -603,10 +655,23 @@ class StalkerClient(private val s: Source) {
         try {
             val ch = channels().firstOrNull() ?: run { appendLine("Chaînes : aucune"); return@buildString }
             appendLine("Chaînes : ${channels().size} — test sur « ${ch.name} »")
-            appendLine("Commande : ${ch.url.removePrefix("stalker:").take(90)}")
-            val link = createLink(ch.url.removePrefix("stalker:"))
-            appendLine("Lien obtenu : ${link.replace(Regex("(play_token|token)=[^&]+"), "$1=…").take(140)}")
-            appendLine(probe(link))
+            val cmd = ch.url.removePrefix("stalker:")
+            val id = ch.key.substringAfterLast("|stk", "")
+            appendLine("Commande : ${cmd.take(90)}")
+            // Les trois façons d'obtenir le lien, testées l'une après l'autre.
+            val seen = HashSet<String>()
+            for (k in 0..2) {
+                try {
+                    val (link, how) = liveLink(cmd, id, k)
+                    if (!seen.add(how)) continue
+                    appendLine("")
+                    appendLine("• $how")
+                    appendLine("  Lien : ${link.replace(Regex("(play_token|token)=[^&]+"), "$1=…").take(140)}")
+                    appendLine("  " + probe(link))
+                } catch (e: Exception) {
+                    appendLine("• Stratégie ${k + 1} : ÉCHEC — ${e.message}")
+                }
+            }
         } catch (e: Exception) {
             appendLine("Test de lecture : ÉCHEC — ${e.message}")
         }

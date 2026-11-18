@@ -313,11 +313,12 @@ class PlayerActivity : FragmentActivity() {
                 return
             }
             // Portail MAC : le lien est à usage unique → on en redemande un neuf (sans forcer le HLS).
-            if (StreamResolver.isStalker(ch) && reconnects < 4) {
+            if (StreamResolver.isStalker(ch) && reconnects < 6) {
                 reconnects++
                 // Format non reconnu : on alterne HLS / MPEG-TS au prochain essai.
                 if (isFormatError(error)) stalkerHls = !stalkerHls
-                showInfo(ch, "Nouvel essai avec un lien neuf ($reconnects/4, ${if (stalkerHls) "HLS" else "TS"})… (${error.errorCodeName})")
+                showInfo(ch, "Essai $reconnects/6 : ${StreamResolver.lastStrategy.ifBlank { "lien neuf" }} a échoué (${explain(error)}). " +
+                    "Nouvel essai (${if (stalkerHls) "HLS" else "TS"})…")
                 handler.postDelayed({ if (list.getOrNull(index)?.key == ch.key) restartStalker(ch) }, 1500L * reconnects)
                 return
             }
@@ -434,10 +435,13 @@ class PlayerActivity : FragmentActivity() {
     private fun restartStalker(ch: Channel) {
         lifecycleScope.launch {
             try {
-                val url = StreamResolver.resolve(ch)
+                // Chaque essai change de stratégie (lien temporaire, lien listé, lien construit),
+                // puis d'en-têtes (boîtier MAG complet, puis User-Agent seul).
+                val attempt = reconnects
+                val url = StreamResolver.resolve(ch, attempt)
                 currentUrl = url
                 PlayerFactory.play(this@PlayerActivity, player, url, StreamResolver.userAgent(ch), ch.referer,
-                    forceHls = stalkerHls || StreamResolver.looksHls(url), headers = StreamResolver.headers(ch))
+                    forceHls = stalkerHls || StreamResolver.looksHls(url), headers = StreamResolver.headers(ch, attempt))
             } catch (e: Exception) {
                 showInfo(ch, "Erreur : ${e.message}")
                 handler.removeCallbacks(hideInfo)

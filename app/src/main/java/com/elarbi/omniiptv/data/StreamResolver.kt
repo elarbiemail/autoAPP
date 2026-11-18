@@ -6,9 +6,16 @@ import kotlinx.coroutines.withContext
 
 object StreamResolver {
     /** Renvoie l'URL réellement lisible (les portails MAC donnent un lien temporaire). */
-    suspend fun resolve(ch: Channel): String = withContext(Dispatchers.IO) {
+    /** Pour les chaînes des portails MAC : description du dernier lien choisi (affichée en cas d'échec). */
+    @Volatile var lastStrategy = ""
+
+    suspend fun resolve(ch: Channel, attempt: Int = 0): String = withContext(Dispatchers.IO) {
         when {
-            ch.url.startsWith("stalker:") -> Repo.stalker(ch.sourceId).createLink(ch.url.removePrefix("stalker:"))
+            ch.url.startsWith("stalker:") -> {
+                val (u, how) = Repo.stalker(ch.sourceId).liveLink(ch.url.removePrefix("stalker:"), stalkerId(ch), attempt)
+                lastStrategy = how
+                u
+            }
             ch.url.startsWith("stkvod:") -> {
                 val v = ch.url.removePrefix("stkvod:")
                 Repo.stalker(ch.sourceId).createLink(v.substringAfter(':'), "vod", v.substringBefore(':'))
@@ -36,8 +43,16 @@ object StreamResolver {
     }
 
     /** Portails MAC : en-têtes d'un vrai boîtier MAG aussi pendant la lecture. */
-    fun headers(ch: Channel): Map<String, String> {
+    /** Identifiant de la chaîne dans le portail (clé « source|stk123 »). */
+    fun stalkerId(ch: Channel): String = ch.key.substringAfterLast("|stk", "").takeIf { it.all(Char::isDigit) }.orEmpty()
+
+    /**
+     * En-têtes de lecture. Essais 0 à 2 : comme un boîtier MAG (User-Agent, X-User-Agent, cookie mac).
+     * À partir de l'essai 3 : seulement le User-Agent du boîtier, comme QiTV ou VLC dans MacAttack.
+     */
+    fun headers(ch: Channel, attempt: Int = 0): Map<String, String> {
         if (!isStalker(ch)) return emptyMap()
+        if (attempt >= 3) return emptyMap()
         val s = Repo.sources.firstOrNull { it.id == ch.sourceId } ?: return emptyMap()
         val mac = java.net.URLEncoder.encode(s.mac.trim().uppercase(), "UTF-8")
         val tz = java.net.URLEncoder.encode(java.util.TimeZone.getDefault().id, "UTF-8")
