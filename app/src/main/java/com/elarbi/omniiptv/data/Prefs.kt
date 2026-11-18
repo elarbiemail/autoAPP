@@ -39,7 +39,8 @@ object Prefs {
 
     /** Aperçu vidéo de la chaîne sélectionnée dans l'onglet Direct. */
     var livePreview: Boolean
-        get() = p.getBoolean("livePreview", true)
+        get() = p.getBoolean("livePreview", (Repo.app.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager)
+            .let { !it.isLowRamDevice && it.memoryClass >= 192 })
         set(v) = p.edit().putBoolean("livePreview", v).apply()
 
     /** Langue audio préférée (code ISO, vide = langue du téléviseur). */

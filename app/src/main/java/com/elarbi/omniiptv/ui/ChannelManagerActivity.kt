@@ -82,10 +82,26 @@ class ChannelManagerActivity : FragmentActivity() {
         val src = Repo.sources.firstOrNull { it.id == s }
         btnSource.text = "Source : ${src?.name ?: "aucune"}"
         if (src == null) { status.text = "Ajoutez d'abord une source."; return }
-        groups = Edits.groups(src.id)
-        val all = Edits.view(src.id, true)
+        status.text = "Chargement de la liste…"
+        // Liste calculée une seule fois, en arrière-plan (gros portails), puis réutilisée à chaque catégorie.
+        lifecycleScope.launch {
+            val all = withContext(Dispatchers.Default) {
+                try { Edits.view(src.id, true) } catch (e: Throwable) { com.elarbi.omniiptv.data.CrashLog.record("Outils avancés", e); emptyList() }
+            }
+            if (isFinishing) return@launch
+            allCache = all
+            groups = all.map { it.group }.distinct()
+            showGroups(src, all)
+        }
+    }
+
+    private var allCache: List<Channel> = emptyList()
+
+    private fun showGroups(src: com.elarbi.omniiptv.model.Source, all: List<Channel>) {
+        val counts = HashMap<String, Int>()
+        for (c in all) counts[c.group] = (counts[c.group] ?: 0) + 1
         val labels = groups.map { g ->
-            val n = all.count { it.group == g }
+            val n = counts[g] ?: 0
             (if (Edits.isGroupHidden(src.id, g)) "🚫 " else "") + "$g ($n)"
         }
         val keep = groupsView.selectedItemPosition.coerceAtLeast(0)
@@ -102,7 +118,7 @@ class ChannelManagerActivity : FragmentActivity() {
     private fun selectGroup(g: String?) {
         val s = sid ?: return
         group = g
-        channels = if (g == null) emptyList() else Edits.view(s, true).filter { it.group == g }
+        channels = if (g == null || s.isEmpty()) emptyList() else allCache.filter { it.group == g }
         channelAdapter.items = channels.map { c -> if (Edits.isHidden(c)) c.copy(name = "🚫 " + c.name) else c }
         channelAdapter.notifyDataSetChanged()
     }

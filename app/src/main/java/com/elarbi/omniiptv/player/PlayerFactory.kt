@@ -50,8 +50,9 @@ object PlayerFactory {
      */
     fun bufferBytes(ctx: Context): Int {
         val (mb, low) = memory(ctx)
-        val part = if (low) mb / 8 else mb / 4
-        return (part.coerceIn(16, 96) * 1024 * 1024)
+        // Le tampon partage la mémoire avec les listes de chaînes : une part modeste suffit (8 Mb/s × 40 s ≈ 40 Mo).
+        val part = if (low) mb / 10 else mb / 6
+        return (part.coerceIn(16, 64) * 1024 * 1024)
     }
 
     /** Résumé lisible du réglage (affiché dans Réglages > Lecture). */
@@ -62,7 +63,8 @@ object PlayerFactory {
             "plafond ${bufferBytes(ctx) / 1048576} Mo, ${b.liveOffset / 1000} s derrière le direct • décodage $dec"
     }
 
-    fun create(ctx: Context): ExoPlayer {
+    /** [preview] : lecteur léger pour l'aperçu de Direct (petit tampon, démarrage immédiat). */
+    fun create(ctx: Context, preview: Boolean = false): ExoPlayer {
         val prefs = com.elarbi.omniiptv.data.Prefs
         // Décodage : matériel d'abord, avec secours sur un autre décodeur ; FFmpeg pour les sons que le téléviseur
         // ne sait pas lire (AC3, E-AC3, DTS, MP2… fréquents en IPTV).
@@ -75,11 +77,11 @@ object PlayerFactory {
                     else -> DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON
                 }
             )
-        val b = buffer(ctx)
+        val b = if (preview) Buffer("Aperçu", 2_000, 8_000, 500, 1_000, 0, 6_000) else buffer(ctx)
         val load = DefaultLoadControl.Builder()
             .setAllocator(androidx.media3.exoplayer.upstream.DefaultAllocator(true, androidx.media3.common.C.DEFAULT_BUFFER_SEGMENT_SIZE))
             .setBufferDurationsMs(b.min, b.max, b.start, b.rebuffer)
-            .setTargetBufferBytes(bufferBytes(ctx))
+            .setTargetBufferBytes(if (preview) 12 * 1024 * 1024 else bufferBytes(ctx))
             .setPrioritizeTimeOverSizeThresholds(false)
             .setBackBuffer(b.back, true)
             .build()

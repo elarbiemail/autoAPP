@@ -15,6 +15,7 @@ class App : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        com.elarbi.omniiptv.data.CrashLog.install(this)
         // Cache des logos et affiches limité à 80 Mo (250 Mo par défaut : trop pour les téléviseurs à petit stockage).
         try {
             com.bumptech.glide.Glide.init(this, com.bumptech.glide.GlideBuilder()

@@ -80,6 +80,10 @@ object JsonStream {
     fun readChannels(file: File): List<Channel> {
         if (!file.exists()) return emptyList()
         val out = ArrayList<Channel>()
+        // Textes répétés (source, catégorie, identité du boîtier, referer) partagés au lieu d'être copiés
+        // pour chaque chaîne : des dizaines de Mo économisés sur les gros portails.
+        val pool = HashMap<String, String>()
+        fun shared(x: String): String = if (x.isEmpty()) "" else pool.getOrPut(x) { x }
         file.inputStream().use { input ->
             val r = reader(input)
             r.beginArray()
@@ -97,7 +101,7 @@ object JsonStream {
                     }
                 }
                 r.endObject()
-                if (k.isNotEmpty()) out += Channel(k, s, n, u, l, g, e, a, rf, v, c)
+                if (k.isNotEmpty()) out += Channel(k, shared(s), n, u, l, shared(g), e, shared(a), shared(rf), v, c)
             }
             r.endArray()
         }

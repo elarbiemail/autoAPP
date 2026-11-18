@@ -389,6 +389,19 @@ class SettingsActivity : FragmentActivity() {
             }
         }
         link("Raccourcis de la télécommande et mode d'emploi") { main(MainFragment.A_ABOUT) }
+        val journal = com.elarbi.omniiptv.data.CrashLog.journal()
+        link("Journal des erreurs", if (journal.isBlank()) "Aucune erreur enregistrée" else "${journal.lines().count { it.startsWith("===") }} erreur(s) enregistrée(s) — à photographier pour la correction") {
+            val tv = TextView(this).apply {
+                text = journal.ifBlank { "Aucune erreur enregistrée." }.takeLast(12_000)
+                textSize = 11f; setTextColor(Color.WHITE); setPadding(Ui.dp(this@SettingsActivity, 14), 0, Ui.dp(this@SettingsActivity, 14), 0)
+            }
+            AlertDialog.Builder(this).setTitle("Journal des erreurs")
+                .setView(ScrollView(this).apply { addView(tv) })
+                .setPositiveButton("Fermer", null)
+                .setNeutralButton("Effacer") { _, _ -> com.elarbi.omniiptv.data.CrashLog.clear(); render() }
+                .show()
+        }
+        note(com.elarbi.omniiptv.data.CrashLog.device())
     }
 
     /** Liste des entrées du téléviseur : HDMI affiché dans l'application, tuner via l'application TV. */

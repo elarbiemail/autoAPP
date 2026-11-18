@@ -9,6 +9,8 @@ import android.view.Gravity
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import com.elarbi.omniiptv.data.Edits
 import com.elarbi.omniiptv.data.Reminders
 import com.elarbi.omniiptv.data.Repo
@@ -42,10 +44,20 @@ class GuideActivity : FragmentActivity(), EpgGridView.Listener {
         grid.listener = this
         root.addView(grid, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         setContentView(root)
-        val src = Repo.activeSource()
-        all = com.elarbi.omniiptv.data.Shown.channels().filter { !it.isVod }
+        // Les chaînes sont lues en arrière-plan : l'écran s'ouvre tout de suite, même avec un gros portail.
+        if (Repo.favorites.values.any { !it.isVod }) group = "★ Favoris"
         apply()
         grid.requestFocus()
+        details.text = "Chargement des chaînes…"
+        lifecycleScope.launch {
+            all = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                try { com.elarbi.omniiptv.data.Shown.channels().filter { !it.isVod } }
+                catch (e: Throwable) { com.elarbi.omniiptv.data.CrashLog.record("Guide TV", e); emptyList() }
+            }
+            if (isFinishing) return@launch
+            if (group != "★ Favoris") apply()
+            details.text = "${all.size} chaînes • « Groupe » pour choisir une catégorie"
+        }
     }
 
     private fun apply() {

@@ -202,8 +202,26 @@ class TvHomeActivity : FragmentActivity() {
         show(sec)
         handler.post(tick)
         handler.postDelayed({ Prefs.launching = false }, 8000)
-        if (safeMode) handler.post { safeModeDialog() }
-        else if (savedInstanceState == null) startup()
+        val crash = if (savedInstanceState == null) com.elarbi.omniiptv.data.CrashLog.takePending() else null
+        when {
+            crash != null -> handler.post { crashDialog(crash) }
+            safeMode -> handler.post { safeModeDialog() }
+        }
+        if (!safeMode && crash == null && savedInstanceState == null) startup()
+    }
+
+    /** Cause du dernier plantage : à photographier pour la correction. */
+    private fun crashDialog(text: String) {
+        val tv = TextView(this).apply {
+            this.text = text.lines().take(18).joinToString("\n")
+            textSize = 12f; setTextColor(Color.WHITE); setPadding(dp(16), dp(8), dp(16), dp(8)); setTextIsSelectable(true)
+        }
+        AlertDialog.Builder(this).setTitle("L'application s'est arrêtée la dernière fois")
+            .setView(ScrollView(this).apply { addView(tv) })
+            .setMessage("Prenez cette fenêtre en photo pour la correction. Le journal complet est dans Réglages > Sauvegarde et aide.")
+            .setPositiveButton("Fermer", null)
+            .setNeutralButton("Libérer de l'espace") { _, _ -> freeSpace() }
+            .show()
     }
 
     override fun onStop() {
@@ -792,11 +810,19 @@ class TvHomeActivity : FragmentActivity() {
             try {
                 val url = StreamResolver.resolve(ch)
                 if (previewKey != ch.key || sec != Sec.LIVE || isFinishing) return@launch
-                val p = preview ?: PlayerFactory.create(this@TvHomeActivity).also { preview = it }
+                val p = preview ?: PlayerFactory.create(this@TvHomeActivity, preview = true).also { pl ->
+                    preview = pl
+                    pl.addListener(object : androidx.media3.common.Player.Listener {
+                        override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                            status.text = "Aperçu indisponible (${error.errorCodeName}) — OK pour essayer en plein écran"
+                        }
+                    })
+                }
                 previewView?.player = p
                 PlayerFactory.play(this@TvHomeActivity, p, url, StreamResolver.userAgent(ch), ch.referer,
                     forceHls = StreamResolver.looksHls(url), headers = StreamResolver.headers(ch))
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
+                if (e is OutOfMemoryError) { stopPreview(); com.elarbi.omniiptv.data.CrashLog.record("Aperçu", e) }
                 if (previewKey == ch.key) status.text = "Aperçu indisponible : ${e.message}"
             }
         }

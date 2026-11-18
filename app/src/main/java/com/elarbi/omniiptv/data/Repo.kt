@@ -35,7 +35,11 @@ object Repo {
         private set
 
     /** Travaux longs (chargement des sources) indépendants des écrans : ils continuent si l'on quitte l'écran. */
-    val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
+    /** Travaux de fond : une erreur (même de mémoire) y est consignée sans fermer l'application. */
+    val scope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + Dispatchers.IO +
+            kotlinx.coroutines.CoroutineExceptionHandler { _, e -> CrashLog.record("Tâche de fond", e) }
+    )
 
     /** Date du dernier chargement réussi d'une source. */
     fun lastRefresh(sourceId: String): Long = prefs.getLong("lastrefresh_$sourceId", 0L)
@@ -202,6 +206,7 @@ object Repo {
         } catch (e: OutOfMemoryError) {
             Log.w("Repo", "liste trop grosse", e)
             loadFailed.add(sourceId)
+            CrashLog.record("Liste trop grosse pour la mémoire (${file("ch_$sourceId.json").length() / 1048576} Mo)", e)
             return emptyList()
         } catch (e: Exception) {
             Log.w("Repo", "liste", e); emptyList()
@@ -357,6 +362,9 @@ object Repo {
             }
         }
         if (merged.isEmpty() && urls.isNotEmpty() && errors == urls.size) throw IOException("Guide TV injoignable")
+        val trimmed = trimEpg(merged)
+        merged.clear()
+        merged.putAll(trimmed)
         JsonStream.writeEpg(file("epg_${s.id}.json"), merged)
         val io = JSONObject()
         icons.forEach { (k, v) -> io.put(k, v) }
@@ -375,6 +383,31 @@ object Repo {
 
     private val iconCache = HashMap<String, Map<String, String>>()
     private val shortCache = HashMap<String, List<Programme>>()
+
+    /**
+     * Guide limité selon la mémoire du téléviseur : chaînes des listes de l'utilisateur d'abord,
+     * 30 programmes par chaîne, descriptions gardées pour les 4 premiers seulement.
+     */
+    private fun trimEpg(m: Map<String, List<Programme>>): Map<String, List<Programme>> {
+        val am = app.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        val budget = (am.largeMemoryClass * 400).coerceIn(30_000, 200_000)
+        val now = System.currentTimeMillis()
+        val prio = LinkedHashSet<String>()
+        (favorites.values.toList() + recents.toList() + FavLists.lists().flatMap { FavLists.items(it.id) })
+            .forEach { c -> epgKeys(c).forEach { k -> if (m.containsKey(k)) prio += k } }
+        val out = HashMap<String, List<Programme>>()
+        var total = 0
+        for (k in prio.asSequence() + m.keys.asSequence().filter { it !in prio }) {
+            if (total >= budget) break
+            val l = m[k] ?: continue
+            val kept = l.asSequence().filter { it.end > now - 2 * 3600_000L }.take(30).toList()
+                .mapIndexed { i, p -> if (i < 4 || p.desc.isEmpty()) p else p.copy(desc = "") }
+            if (kept.isEmpty()) continue
+            out[k] = kept
+            total += kept.size
+        }
+        return out
+    }
 
     fun epgKeys(ch: Channel): List<String> = listOfNotNull(
         ch.epgId.takeIf { it.isNotBlank() }?.lowercase(),

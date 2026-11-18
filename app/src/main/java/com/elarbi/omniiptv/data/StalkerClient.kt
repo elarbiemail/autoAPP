@@ -686,9 +686,9 @@ class StalkerClient(private val s: Source) {
                             val o = JsonStream.flat(r, epgKeys)
                             val st = t(o, "start_timestamp", "start")
                             val en = t(o, "stop_timestamp", "end", "stop")
-                            if (st > 0 && en > st && en > from && st < to && l.size < 40 && total < 250_000) {
+                            if (st > 0 && en > st && en > from && st < to && l.size < 40 && total < 150_000) {
                                 l += Programme(st, en, o["name"].orEmpty().ifBlank { o["title"].orEmpty() },
-                                    o["descr"].orEmpty().ifBlank { o["description"].orEmpty() }.take(160))
+                                    o["descr"].orEmpty().ifBlank { o["description"].orEmpty() }.take(120))
                                 total++
                             }
                         }

@@ -11,8 +11,8 @@ android {
         applicationId = "com.elarbi.omniiptv"
         minSdk = 26
         targetSdk = 34
-        versionCode = 21
-        versionName = "1.3.1"
+        versionCode = 22
+        versionName = "1.3.2"
         // Téléviseurs Google TV / Android TV et téléphones : processeurs ARM (garde l'APK léger malgré FFmpeg).
         ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a") }
     }

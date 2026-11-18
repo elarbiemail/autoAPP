@@ -114,7 +114,16 @@ class MultiViewActivity : FragmentActivity() {
     }
 
     private fun chooseChannel() {
-        val list = candidates()
+        // Liste lue en arrière-plan (gros portails) pour ne pas bloquer l'écran.
+        lifecycleScope.launch {
+            val list = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                try { candidates() } catch (e: Throwable) { com.elarbi.omniiptv.data.CrashLog.record("Multi-écran", e); emptyList() }
+            }
+            if (!isFinishing) showChoices(list)
+        }
+    }
+
+    private fun showChoices(list: List<Channel>) {
         if (list.isEmpty()) { Ui.toast(this, "Aucune chaîne disponible."); return }
         val names = list.map { (if (Repo.isFavorite(it.key)) "★ " else "") + it.name + "  ·  " + it.group }.toTypedArray()
         AlertDialog.Builder(this).setTitle("Chaîne pour la case ${sel + 1}")
